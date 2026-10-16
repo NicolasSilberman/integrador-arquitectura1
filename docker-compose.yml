@@ -1,0 +1,70 @@
+# Clase 10 — Arquitectura de Software 1
+# Un solo comando levanta todo:   docker compose up -d --build
+
+services:
+
+  # Base de datos. No publica puertos: solo la ven los servicios de la red "backend".
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: cursos
+      POSTGRES_USER: cursos
+      POSTGRES_PASSWORD: cursos123        # en un proyecto real, esto va en un archivo .env que NO se sube al repo
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # volumen con nombre: los datos sobreviven a los contenedores
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro   # bind mount: script que corre la primera vez
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cursos -d cursos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - backend
+
+  # API REST de cursos. Se construye desde ./api (Dockerfile propio).
+  api:
+    build: ./api
+    environment:
+      PORT: 3000
+      DB_HOST: db          # service discovery: el nombre del servicio ES el hostname
+      DB_PORT: 5432
+      DB_NAME: cursos
+      DB_USER: cursos
+      DB_PASSWORD: cursos123
+    ports:
+      - "3000:3000"        # puerto_host:puerto_contenedor
+    depends_on:
+      db:
+        condition: service_healthy   # espera a que Postgres responda, no solo a que arranque
+    networks:
+      - backend
+
+  # Backend For Frontend para la app mobile: le habla a la API por nombre (http://api:3000).
+  bff-mobile:
+    build: ./bff-mobile
+    environment:
+      PORT: 3001
+      API_URL: http://api:3000
+    ports:
+      - "3001:3001"
+    depends_on:
+      - api
+    networks:
+      - backend
+
+  # Documentación autogenerada a partir del contrato OpenAPI.
+  # No está en "backend": no necesita hablar con nadie. Quien llama a la API es tu navegador.
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    environment:
+      SWAGGER_JSON: /spec/openapi.yaml
+    volumes:
+      - ./openapi.yaml:/spec/openapi.yaml:ro   # bind mount: editás el contrato y recargás, sin rebuild
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:
+
+networks:
+  backend:

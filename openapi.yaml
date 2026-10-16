@@ -1,0 +1,153 @@
+openapi: 3.0.3
+info:
+  title: API de Cursos — mi version
+  version: 1.0.0
+  description: |
+    API de ejemplo de la Clase 10 (Arquitectura de Software 1 — UNAHUR).
+    Este archivo es el **contrato**: Swagger UI genera esta documentación a partir de él.
+servers:
+  - url: http://localhost:3000
+    description: API levantada con docker compose (vista desde tu navegador)
+tags:
+  - name: Cursos
+paths:
+  /cursos:
+    get:
+      tags: [Cursos]
+      summary: Listar cursos
+      operationId: listarCursos
+      responses:
+        '200':
+          description: Lista de cursos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Curso'
+    post:
+      tags: [Cursos]
+      summary: Crear un curso
+      operationId: crearCurso
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CursoNuevo'
+            example:
+              nombre: Ingeniería de Software
+              cupo: 30
+              docente: Equipo docente
+      responses:
+        '201':
+          description: Curso creado
+          headers:
+            Location:
+              description: URI del curso creado
+              schema:
+                type: string
+                example: /cursos/4
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Curso'
+        '400':
+          $ref: '#/components/responses/Invalido'
+  /cursos/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          example: 1
+    get:
+      tags: [Cursos]
+      summary: Obtener un curso
+      operationId: obtenerCurso
+      responses:
+        '200':
+          description: El curso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Curso'
+        '400':
+          $ref: '#/components/responses/Invalido'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    delete:
+      tags: [Cursos]
+      summary: Eliminar un curso
+      operationId: eliminarCurso
+      responses:
+        '204':
+          description: Eliminado (sin cuerpo)
+        '400':
+          $ref: '#/components/responses/Invalido'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+components:
+  schemas:
+    CursoNuevo:
+      type: object
+      required: [nombre, cupo]
+      properties:
+        nombre:
+          type: string
+          example: Arquitectura de Software 1
+        cupo:
+          type: integer
+          minimum: 1
+          example: 40
+        docente:
+          type: string
+          nullable: true
+        descripcion:
+          type: string
+          nullable: true
+    Curso:
+      allOf:
+        - type: object
+          required: [id, creadoEn]
+          properties:
+            id:
+              type: integer
+              example: 1
+            creadoEn:
+              type: string
+              format: date-time
+        - $ref: '#/components/schemas/CursoNuevo'
+    ProblemDetails:
+      description: Formato de error estándar (RFC 9457, antes RFC 7807)
+      type: object
+      properties:
+        type:
+          type: string
+          example: about:blank
+        title:
+          type: string
+          example: Curso no encontrado
+        status:
+          type: integer
+          example: 404
+        detail:
+          type: string
+          example: No existe un curso con id 99.
+        instance:
+          type: string
+          example: /cursos/99
+  responses:
+    NoEncontrado:
+      description: El recurso no existe
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Invalido:
+      description: Datos de entrada inválidos
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
