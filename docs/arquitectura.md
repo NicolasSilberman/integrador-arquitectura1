@@ -135,7 +135,7 @@ Priorizados según el escenario 5A. Para cada uno se indica su categoría en el 
 
 ## 4. C4 — Nivel 1: Contexto
 
-![C4 de Contexto](docs/c4-contexto.png)
+![C4 de Contexto](./c4-contexto.png)
 
 | Elemento | Tipo | Relación con el sistema |
 |---|---|---|
