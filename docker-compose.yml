@@ -1,4 +1,4 @@
-# Clase 10 — Arquitectura de Software 1
+# Sistema de expensas — TP Integrador · Arquitectura de Software 1
 # Un solo comando levanta todo:   docker compose up -d --build
 
 services:
@@ -7,30 +7,30 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: cursos
-      POSTGRES_USER: cursos
-      POSTGRES_PASSWORD: cursos123        # en un proyecto real, esto va en un archivo .env que NO se sube al repo
+      POSTGRES_DB: ${DB_NAME:-expensas}
+      POSTGRES_USER: ${DB_USER:-expensas}
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?Falta DB_PASSWORD, copiá .env.example como .env}"   # la contraseña vive en .env, que NO se sube al repo
     volumes:
       - pgdata:/var/lib/postgresql/data   # volumen con nombre: los datos sobreviven a los contenedores
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro   # bind mount: script que corre la primera vez
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cursos -d cursos"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
     networks:
       - backend
 
-  # API REST de cursos. Se construye desde ./api (Dockerfile propio).
+  # API de expensas (monolito modular). Se construye desde ./api (Dockerfile propio).
   api:
     build: ./api
     environment:
       PORT: 3000
       DB_HOST: db          # service discovery: el nombre del servicio ES el hostname
       DB_PORT: 5432
-      DB_NAME: cursos
-      DB_USER: cursos
-      DB_PASSWORD: cursos123
+      DB_NAME: ${DB_NAME:-expensas}
+      DB_USER: ${DB_USER:-expensas}
+      DB_PASSWORD: "${DB_PASSWORD:?Falta DB_PASSWORD, copiá .env.example como .env}"
     ports:
       - "3000:3000"        # puerto_host:puerto_contenedor
     depends_on:
