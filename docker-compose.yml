@@ -31,11 +31,23 @@ services:
       DB_NAME: ${DB_NAME:-expensas}
       DB_USER: ${DB_USER:-expensas}
       DB_PASSWORD: "${DB_PASSWORD:?Falta DB_PASSWORD, copiá .env.example como .env}"
+      BANCO_URL: http://banco-mock:8090/soap   # el banco se alcanza por nombre de servicio
     ports:
       - "3000:3000"        # puerto_host:puerto_contenedor
     depends_on:
       db:
         condition: service_healthy   # espera a que Postgres responda, no solo a que arranque
+    networks:
+      - backend
+
+  # Banco SIMULADO: hace de servicio SOAP heredado del banco (sistema externo, ADR-003).
+  # Solo para desarrollo y demo; en producción se reemplaza por el banco real.
+  banco-mock:
+    build: ./banco-mock
+    environment:
+      PORT: 8090
+    ports:
+      - "8090:8090"        # publicado para poder probarlo desde el navegador
     networks:
       - backend
 
