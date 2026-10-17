@@ -1,124 +1,414 @@
 openapi: 3.0.3
 info:
-  title: API de Cursos — mi version
+  title: API de expensas
   version: 1.0.0
   description: |
-    API de ejemplo de la Clase 10 (Arquitectura de Software 1 — UNAHUR).
-    Este archivo es el **contrato**: Swagger UI genera esta documentación a partir de él.
+    API del sistema de expensas de consorcios (TP Integrador · Arquitectura de Software 1 · UNAHUR).
+    Escenario 5A: administrador independiente.
+
+    Este archivo es el **contrato** del caso de uso mínimo: un propietario ve la liquidación del mes
+    y la paga, y el pago queda imputado. Swagger UI genera esta documentación a partir de él.
+
+    - Versionado en la URI (`/v1`).
+    - Errores en formato Problem Details (`application/problem+json`).
+    - Los importes se expresan en centavos (enteros) para evitar errores de redondeo.
 servers:
   - url: http://localhost:3000
     description: API levantada con docker compose (vista desde tu navegador)
 tags:
-  - name: Cursos
+  - name: Expensas
+    description: Liquidación del mes y código de pago (propietario y administrador)
+  - name: Conciliación
+    description: Conciliación diaria de cobranzas del banco (administrador)
+  - name: Sistema
+    description: Estado del servicio
 paths:
-  /cursos:
+  /health:
     get:
-      tags: [Cursos]
-      summary: Listar cursos
-      operationId: listarCursos
+      tags: [Sistema]
+      summary: Estado del servicio
+      operationId: health
       responses:
         '200':
-          description: Lista de cursos
+          description: La API y la base de datos responden
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /v1/expensas:
+    get:
+      tags: [Expensas]
+      summary: Listar expensas
+      description: |
+        El propietario ve las expensas de **sus** unidades; el administrador ve todas.
+      operationId: listarExpensas
+      parameters:
+        - name: periodo
+          in: query
+          required: false
+          description: Período liquidado (AAAA-MM)
+          schema:
+            $ref: '#/components/schemas/Periodo'
+        - name: estado
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/EstadoExpensa'
+      responses:
+        '200':
+          description: Lista de expensas
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Curso'
+                  $ref: '#/components/schemas/ExpensaResumen'
+        '400':
+          $ref: '#/components/responses/Invalido'
+
+  /v1/expensas/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ExpensaId'
+    get:
+      tags: [Expensas]
+      summary: Obtener una expensa
+      description: Detalle de la expensa con sus conceptos, su estado y, si ya está pagada, el pago imputado.
+      operationId: obtenerExpensa
+      responses:
+        '200':
+          description: La expensa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expensa'
+        '400':
+          $ref: '#/components/responses/Invalido'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+  /v1/expensas/{id}/codigo-pago:
+    parameters:
+      - $ref: '#/components/parameters/ExpensaId'
+    put:
+      tags: [Expensas]
+      summary: Obtener el código de pago
+      description: |
+        Devuelve el código con el que el propietario paga la expensa en el banco.
+
+        Es **idempotente**: la primera vez genera el código (201) y las siguientes devuelven
+        el mismo (200). Así, si el propietario reintenta, nunca recibe un código distinto.
+      operationId: obtenerCodigoDePago
+      responses:
+        '200':
+          description: La expensa ya tenía código; se devuelve el mismo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodigoDePago'
+        '201':
+          description: Código generado
+          headers:
+            Location:
+              description: URI del código de pago
+              schema:
+                type: string
+                example: /v1/expensas/12/codigo-pago
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodigoDePago'
+        '400':
+          $ref: '#/components/responses/Invalido'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          description: La expensa ya está pagada
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: about:blank
+                title: Expensa ya pagada
+                status: 409
+                detail: La expensa 12 ya está pagada; no se puede generar un código de pago.
+                instance: /v1/expensas/12/codigo-pago
+
+  /v1/conciliaciones:
     post:
-      tags: [Cursos]
-      summary: Crear un curso
-      operationId: crearCurso
+      tags: [Conciliación]
+      summary: Conciliar una fecha
+      description: |
+        Descarga del banco el listado de cobranzas de la fecha indicada y lo concilia.
+        La conciliación automática corre sola cada mañana; este endpoint permite dispararla a mano.
+
+        Repetirla para la misma fecha no duplica imputaciones: cada operación del banco se procesa una sola vez.
+      operationId: conciliar
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CursoNuevo'
+              $ref: '#/components/schemas/SolicitudConciliacion'
             example:
-              nombre: Ingeniería de Software
-              cupo: 30
-              docente: Equipo docente
+              fecha: '2026-10-21'
       responses:
         '201':
-          description: Curso creado
+          description: Conciliación ejecutada
           headers:
             Location:
-              description: URI del curso creado
+              description: URI de la corrida
               schema:
                 type: string
-                example: /cursos/4
+                example: /v1/conciliaciones/7
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Curso'
+                $ref: '#/components/schemas/Conciliacion'
         '400':
           $ref: '#/components/responses/Invalido'
-  /cursos/{id}:
+        '409':
+          description: Ya hay una conciliación en curso
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '502':
+          description: El banco no respondió o respondió con error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: about:blank
+                title: Banco no disponible
+                status: 502
+                detail: El servicio del banco no respondió. La corrida quedó registrada con error y se reintentará.
+                instance: /v1/conciliaciones
+
+  /v1/conciliaciones/{id}:
     parameters:
       - name: id
         in: path
         required: true
         schema:
           type: integer
-          example: 1
+          example: 7
     get:
-      tags: [Cursos]
-      summary: Obtener un curso
-      operationId: obtenerCurso
+      tags: [Conciliación]
+      summary: Obtener una corrida de conciliación
+      operationId: obtenerConciliacion
       responses:
         '200':
-          description: El curso
+          description: La corrida
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Curso'
-        '400':
-          $ref: '#/components/responses/Invalido'
+                $ref: '#/components/schemas/Conciliacion'
         '404':
           $ref: '#/components/responses/NoEncontrado'
-    delete:
-      tags: [Cursos]
-      summary: Eliminar un curso
-      operationId: eliminarCurso
+
+  /v1/cobranzas:
+    get:
+      tags: [Conciliación]
+      summary: Listar cobranzas
+      description: Cobranzas informadas por el banco. Con `estado=OBSERVADA`, los pagos que el administrador tiene que revisar.
+      operationId: listarCobranzas
+      parameters:
+        - name: estado
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [IMPUTADA, OBSERVADA]
       responses:
-        '204':
-          description: Eliminado (sin cuerpo)
+        '200':
+          description: Lista de cobranzas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Cobranza'
         '400':
           $ref: '#/components/responses/Invalido'
-        '404':
-          $ref: '#/components/responses/NoEncontrado'
+
 components:
+  parameters:
+    ExpensaId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        example: 12
+
   schemas:
-    CursoNuevo:
+    Dinero:
+      description: Importe en centavos (entero) y su moneda
       type: object
-      required: [nombre, cupo]
+      required: [centavos, moneda]
       properties:
-        nombre:
-          type: string
-          example: Arquitectura de Software 1
-        cupo:
+        centavos:
           type: integer
-          minimum: 1
-          example: 40
-        docente:
+          example: 5280000
+        moneda:
           type: string
-          nullable: true
+          enum: [ARS]
+    Periodo:
+      type: string
+      pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+      example: 2026-10
+    EstadoExpensa:
+      type: string
+      enum: [EMITIDA, PAGADA]
+    ExpensaResumen:
+      type: object
+      required: [id, consorcio, unidad, periodo, vencimiento, total, estado]
+      properties:
+        id:
+          type: integer
+          example: 12
+        consorcio:
+          type: string
+          example: Edificio Av. Vergara 1200
+        unidad:
+          type: string
+          example: 2B
+        periodo:
+          $ref: '#/components/schemas/Periodo'
+        vencimiento:
+          type: string
+          format: date
+          example: '2026-11-10'
+        total:
+          $ref: '#/components/schemas/Dinero'
+        estado:
+          $ref: '#/components/schemas/EstadoExpensa'
+    Concepto:
+      type: object
+      required: [tipo, descripcion, monto]
+      properties:
+        tipo:
+          type: string
+          enum: [ORDINARIA, EXTRAORDINARIA, FONDO_RESERVA]
         descripcion:
           type: string
-          nullable: true
-    Curso:
+          example: Expensas ordinarias
+        monto:
+          $ref: '#/components/schemas/Dinero'
+    Expensa:
       allOf:
+        - $ref: '#/components/schemas/ExpensaResumen'
         - type: object
-          required: [id, creadoEn]
+          required: [conceptos]
           properties:
-            id:
-              type: integer
-              example: 1
-            creadoEn:
-              type: string
-              format: date-time
-        - $ref: '#/components/schemas/CursoNuevo'
+            conceptos:
+              type: array
+              items:
+                $ref: '#/components/schemas/Concepto'
+            pagoImputado:
+              description: Cobranza imputada a esta expensa (solo si está pagada)
+              type: object
+              allOf:
+                - $ref: '#/components/schemas/Cobranza'
+              nullable: true
+    CodigoDePago:
+      type: object
+      required: [expensaId, codigoPago, importe, vencimiento]
+      properties:
+        expensaId:
+          type: integer
+          example: 12
+        codigoPago:
+          type: string
+          description: Código para pagar en el banco (incluye dígito verificador)
+          example: '00000000125'
+        importe:
+          $ref: '#/components/schemas/Dinero'
+        vencimiento:
+          type: string
+          format: date
+          example: '2026-11-10'
+    SolicitudConciliacion:
+      type: object
+      required: [fecha]
+      properties:
+        fecha:
+          type: string
+          format: date
+          description: Día de cobranzas a conciliar (por defecto, la automática usa el día anterior)
+          example: '2026-10-21'
+    Conciliacion:
+      type: object
+      required: [id, fechaCobranzas, origen, estado, leidas, imputadas, observadas, yaProcesadas]
+      properties:
+        id:
+          type: integer
+          example: 7
+        fechaCobranzas:
+          type: string
+          format: date
+          example: '2026-10-21'
+        origen:
+          type: string
+          enum: [AUTOMATICA, MANUAL]
+        estado:
+          type: string
+          enum: [EN_CURSO, OK, ERROR]
+        leidas:
+          type: integer
+          example: 4
+        imputadas:
+          type: integer
+          example: 3
+        observadas:
+          type: integer
+          example: 1
+        yaProcesadas:
+          type: integer
+          description: Operaciones que ya se habían procesado en una corrida anterior (no se vuelven a imputar)
+          example: 0
+        error:
+          type: string
+          nullable: true
+    Cobranza:
+      type: object
+      required: [id, referenciaBanco, codigoPago, monto, fechaPago, estado]
+      properties:
+        id:
+          type: integer
+          example: 31
+        referenciaBanco:
+          type: string
+          description: Identificador de la operación en el banco (único)
+          example: OP-20261021-0004
+        codigoPago:
+          type: string
+          example: '00000000125'
+        monto:
+          $ref: '#/components/schemas/Dinero'
+        fechaPago:
+          type: string
+          format: date
+          example: '2026-10-21'
+        estado:
+          type: string
+          enum: [IMPUTADA, OBSERVADA]
+        motivo:
+          type: string
+          nullable: true
+          description: 'Motivo por el que quedó observada: CODIGO_DESCONOCIDO, PAGO_DUPLICADO o MONTO_DISTINTO'
+          example: PAGO_DUPLICADO
+        expensaId:
+          type: integer
+          nullable: true
+          example: 12
     ProblemDetails:
       description: Formato de error estándar (RFC 9457, antes RFC 7807)
       type: object
@@ -128,16 +418,17 @@ components:
           example: about:blank
         title:
           type: string
-          example: Curso no encontrado
+          example: Expensa no encontrada
         status:
           type: integer
           example: 404
         detail:
           type: string
-          example: No existe un curso con id 99.
+          example: No existe una expensa con id 99.
         instance:
           type: string
-          example: /cursos/99
+          example: /v1/expensas/99
+
   responses:
     NoEncontrado:
       description: El recurso no existe
@@ -146,8 +437,14 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
     Invalido:
-      description: Datos de entrada inválidos
+      description: Parámetros o datos de entrada inválidos
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: about:blank
+            title: Parámetro inválido
+            status: 400
+            detail: El período debe tener el formato AAAA-MM.
+            instance: /v1/expensas?periodo=10-2026
