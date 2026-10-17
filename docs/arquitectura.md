@@ -155,19 +155,122 @@ La línea punteada **Propietario → Banco** representa el pago con el código, 
 
 ## 5. Estilo arquitectónico y matriz de Pugh
 
-*Pendiente (22/10).*
+### 5.1 Matriz de Pugh
+
+Se comparan tres alternativas contra un baseline, que por definición puntúa 0 en todo. Cada alternativa se puntúa contra el baseline: +1 mejor, 0 igual, −1 peor. Los criterios salen de los NFRs priorizados en la sección 3.
+
+**Baseline:** monolito en capas.
+
+| Criterio (NFR de origen) | Monolito en capas (baseline) | Monolito modular | Microservicios | Orientado a eventos |
+|---|:-:|:-:|:-:|:-:|
+| Consistencia transaccional (★ 1) | 0 | 0 | −1 | −1 |
+| Simplicidad operativa (★ 2) | 0 | 0 | −1 | −1 |
+| Costo de infraestructura (5) | 0 | 0 | −1 | −1 |
+| Recuperación ante fallas del banco (3) | 0 | 0 | 0 | +1 |
+| Mantenibilidad: fronteras claras entre partes (★ 2) | 0 | +1 | 0 | −1 |
+| Escalabilidad (no es objetivo) | 0 | 0 | +1 | +1 |
+| **Total** | **0** | **+1** | **−3** | **−2** |
+
+### 5.2 Lectura de la matriz
+
+- **Monolito modular:** iguala al baseline en todo y mejora la mantenibilidad, porque cada módulo tiene una frontera explícita y es dueño de sus datos. Es un solo desplegable, así que no suma piezas que operar.
+- **Microservicios:** pierden en los dos NFR estrella. Una imputación que hoy es una sola transacción pasaría a cruzar servicios, y habría más contenedores que desplegar y mantener para un freelancer que viene cuando hay problemas. Mejoran las fronteras, pero a costa de un sistema más difícil de seguir: queda en 0 en mantenibilidad.
+- **Orientado a eventos:** tiene una ventaja real en recuperación, porque una cola persistente reintenta sola cuando el banco falla. Pero agrega un broker que operar, consistencia eventual y un flujo difícil de seguir. La ventaja en recuperación se puede obtener dentro de un monolito con reintentos e idempotencia, sin broker (ADR-004).
+- **Escalabilidad:** se incluye a propósito aunque no sea un objetivo, para mostrar dónde ganarían las alternativas distribuidas y que esa ventaja no pesa en este escenario.
+
+### 5.3 Estilo elegido
+
+**Monolito modular con una sola base de datos** (ADR-001 y ADR-002).
+
+---
 
 ## 6. C4 — Nivel 2: Contenedores
 
-*Pendiente (22/10).*
+![C4 de Contenedores](./c4-contenedores.png)
+
+| Contenedor | Tecnología | Responsabilidad | Estado |
+|---|---|---|---|
+| API de expensas | Node.js + Express | Monolito modular con los módulos Padrón, Liquidación y Cobranzas, la capa anticorrupción del banco y la conciliación diaria programada | En el compose desde esta etapa |
+| Base de datos | PostgreSQL 16 | Datos de los tres módulos, en tablas separadas por módulo. Sin puerto publicado, con volumen con nombre y healthcheck | En el compose desde esta etapa |
+| Swagger UI | swagger-ui | Muestra el contrato OpenAPI y sirve como cliente de prueba del corte | En el compose desde esta etapa |
+| Proveedor de identidad | Keycloak | Login y roles (propietario, administrador) | Diseñado; se suma al compose en la etapa del 29/10 |
+| Aplicación web | SPA en el navegador | Interfaz para propietarios y administrador | Diseñada, fuera del corte |
+
+**Sistema externo:** el banco, con su servicio SOAP heredado. En el compose se simula con un servicio `banco-mock`, pero en el diagrama se muestra como externo porque no es parte del sistema.
+
+**Decisiones reflejadas en el diagrama**
+
+- **Sin BFF:** el esqueleto de la Clase 10 traía un BFF para una app mobile. Se elimina porque hay un solo tipo de cliente y el equipo es chico, que son justamente los casos en que un BFF no conviene.
+- **La conciliación corre dentro de la API**, como una tarea programada, en lugar de un contenedor aparte (ADR-004).
+- **Dónde se valida el token** (en la API o en un gateway) se decide en la etapa del 29/10, junto con el login. Por eso el diagrama todavía no muestra un gateway.
+
+---
 
 ## 7. Modelo de dominio
 
-*Pendiente (22/10): agregados, entidades, value objects e invariantes.*
+![Modelo de dominio](./dominio.png)
+
+### 7.1 Bounded contexts y módulos
+
+Cada bounded context es un módulo de la API:
+
+| Módulo | Responsabilidad | Es dueño de |
+|---|---|---|
+| **Padrón** | Consorcios, unidades funcionales, propietarios y porcentuales | Sus tablas de consorcios y unidades |
+| **Liquidación** | Gastos del período, prorrateo, emisión de expensas y códigos de pago | Sus tablas de liquidaciones, gastos, expensas y conceptos |
+| **Cobranzas** | Conciliación diaria e imputación de cobranzas | Sus tablas de conciliaciones y cobranzas |
+
+**Propiedad de los datos:** cada módulo es el único que lee y escribe sus tablas. Si otro módulo necesita un dato, se lo pide por su interfaz. Es la variante de "consolidación" aplicada a un monolito modular: un solo desplegable y una sola base, pero con dueños claros.
+
+**Capa anticorrupción hacia el banco:** traduce el formato del servicio SOAP heredado (sus importes, fechas y códigos de error) al modelo propio, para que el vocabulario del banco no contamine el dominio (ADR-003).
+
+### 7.2 Agregados
+
+Los agregados se diseñan lo más chicos posible, siempre que sigan protegiendo sus invariantes.
+
+| Agregado | Contiene | Invariantes que protege |
+|---|---|---|
+| **Liquidación** (raíz) | Los gastos de un consorcio en un período | Al emitirse, genera las expensas de todas las unidades en una sola transacción, y la suma de esas expensas es igual al total de gastos, al centavo |
+| **Expensa** (raíz) | Conceptos, vencimiento, estado y código de pago | Su total es la suma de sus conceptos · se paga a lo sumo una vez · una expensa pagada no admite un código de pago nuevo · su monto no cambia después de emitida |
+| **Cobranza** (raíz) | Referencia del banco, código, monto, fecha y estado | Cada operación del banco se procesa una sola vez · se imputa solo si el código existe y el monto es exacto; si no, queda observada con su motivo |
+
+**Liquidación y Expensa son agregados separados.** Si la liquidación contuviera sus expensas, cada pago tendría que tomar la liquidación entera del consorcio, y dos propietarios pagando a la vez se trabarían entre sí. Separadas, la regla "la suma de las expensas es igual al total" se verifica una vez, al emitir. Después, el monto de una expensa ya no cambia (al pagarse solo cambia su estado), así que la regla se sigue cumpliendo sin bloquear la liquidación.
+
+**Conciliación** no es un agregado de negocio: es el registro de cada corrida diaria (qué fecha se procesó, cuántas cobranzas se leyeron, imputaron u observaron, y si terminó bien o con error).
+
+### 7.3 Value objects
+
+| Value object | Por qué |
+|---|---|
+| **Dinero** | Importe en centavos enteros más la moneda (ARS). Evita errores de redondeo con decimales |
+| **Período** | Mes liquidado, con formato `AAAA-MM` |
+| **Código de pago** | Identifica una expensa ante el banco; incluye un dígito verificador para detectar errores de tipeo |
+| **Porcentual** | Proporción de los gastos que le corresponde a una unidad |
+
+---
 
 ## 8. API
 
-*Pendiente (22/10): contrato OpenAPI del caso de uso.*
+El contrato completo va en `openapi.yaml` y se muestra con Swagger UI. Incluye solo los endpoints del caso de uso.
+
+| Método y ruta | Rol | Para qué |
+|---|---|---|
+| `GET /v1/expensas?periodo=` | propietario / administrador | El propietario ve las expensas de sus unidades; el administrador, todas |
+| `GET /v1/expensas/{id}` | propietario / administrador | Detalle de una expensa con sus conceptos y su estado |
+| `PUT /v1/expensas/{id}/codigo-pago` | propietario | Obtiene el código de pago |
+| `POST /v1/conciliaciones` | administrador | Concilia una fecha a mano (la conciliación automática corre sola cada mañana) |
+| `GET /v1/conciliaciones/{id}` | administrador | Resultado de una corrida |
+| `GET /v1/cobranzas?estado=OBSERVADA` | administrador | Pagos observados para revisar |
+
+**Criterios de diseño**
+
+- **REST** sobre recursos del dominio, con los verbos y códigos de estado HTTP que corresponden.
+- **Versionado en la URI** (`/v1`).
+- **Errores con Problem Details** (`application/problem+json`).
+- **`PUT` para el código de pago:** si el propietario reintenta (por ejemplo, porque se le cortó la conexión), tiene que recibir el mismo código y no uno nuevo. `PUT` es idempotente por definición: la primera vez crea el código (201) y las siguientes lo devuelven (200).
+- La seguridad del contrato (`securitySchemes`) se agrega en la etapa del 29/10, junto con el login.
+
+---
 
 ## 9. Seguridad
 
@@ -175,7 +278,12 @@ La línea punteada **Propietario → Banco** representa el pago con el código, 
 
 ## 10. Decisiones de arquitectura (ADRs)
 
-*Pendiente (05/11).*
+| ADR | Decisión | Estado |
+|---|---|---|
+| [ADR-001](adr/ADR-001-estilo-monolito-modular.md) | Estilo: monolito modular | Aceptada |
+| [ADR-002](adr/ADR-002-base-relacional-unica.md) | Una sola base relacional (PostgreSQL), con el dinero en centavos | Aceptada |
+| [ADR-003](adr/ADR-003-integracion-banco-soap.md) | Integración con el banco: descarga diaria por SOAP con capa anticorrupción | Aceptada |
+| [ADR-004](adr/ADR-004-conciliacion-diaria.md) | La conciliación diaria corre dentro de la API | Aceptada |
 
 ## 11. Verificación de NFRs
 
