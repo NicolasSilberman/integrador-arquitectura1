@@ -39,19 +39,6 @@ services:
     networks:
       - backend
 
-  # Backend For Frontend para la app mobile: le habla a la API por nombre (http://api:3000).
-  bff-mobile:
-    build: ./bff-mobile
-    environment:
-      PORT: 3001
-      API_URL: http://api:3000
-    ports:
-      - "3001:3001"
-    depends_on:
-      - api
-    networks:
-      - backend
-
   # Documentación autogenerada a partir del contrato OpenAPI.
   # No está en "backend": no necesita hablar con nadie. Quien llama a la API es tu navegador.
   swagger-ui:
