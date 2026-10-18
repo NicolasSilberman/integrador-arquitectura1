@@ -4,8 +4,8 @@
 
 | Etapa | Contenido | Estado |
 |---|---|---|
-| 15/10 | Dominio y escenario, NFRs, C4 de Contexto | ✔ Este documento |
-| 22/10 | Pugh, estilo, C4 de Contenedores, modelo de dominio, OpenAPI | Pendiente |
+| 15/10 | Dominio y escenario, NFRs, C4 de Contexto | ✔ |
+| 22/10 | Pugh, estilo, C4 de Contenedores, modelo de dominio, OpenAPI; el compose levanta | ✔ |
 | 29/10 | Login con el proveedor de identidad | Pendiente |
 | 05/11 | Caso de uso, ADRs y verificación de NFRs | Pendiente |
 
