@@ -190,10 +190,11 @@ Se comparan tres alternativas contra un baseline, que por definición puntúa 0 
 
 | Contenedor | Tecnología | Responsabilidad | Estado |
 |---|---|---|---|
-| API de expensas | Node.js + Express | Monolito modular con los módulos Padrón, Liquidación y Cobranzas, la capa anticorrupción del banco y la conciliación diaria programada | En el compose desde esta etapa |
-| Base de datos | PostgreSQL 16 | Datos de los tres módulos, en tablas separadas por módulo. Sin puerto publicado, con volumen con nombre y healthcheck | En el compose desde esta etapa |
-| Swagger UI | swagger-ui | Muestra el contrato OpenAPI y sirve como cliente de prueba del corte | En el compose desde esta etapa |
-| Proveedor de identidad | Keycloak | Login y roles (propietario, administrador) | Diseñado; se suma al compose en la etapa del 29/10 |
+| Gateway | Node.js + Express | Única puerta de entrada a la API: valida el token, aplica los permisos por rol y reenvía la identidad del usuario a la API | En el compose desde el 29/10 |
+| API de expensas | Node.js + Express | Monolito modular con los módulos Padrón, Liquidación y Cobranzas, la capa anticorrupción del banco y la conciliación diaria programada. Aplica la regla fina (cada propietario, lo suyo). Sin puerto publicado desde el 29/10 | En el compose desde el 22/10 |
+| Base de datos | PostgreSQL 16 | Datos de los tres módulos, en tablas separadas por módulo. Sin puerto publicado, con volumen con nombre y healthcheck | En el compose desde el 22/10 |
+| Swagger UI | swagger-ui | Muestra el contrato OpenAPI y sirve como cliente de prueba del corte, con login OIDC | En el compose desde el 22/10 |
+| Proveedor de identidad | Keycloak | Login y roles (propietario, administrador), con el realm versionado en el repo | En el compose desde el 29/10 |
 | Aplicación web | SPA en el navegador | Interfaz para propietarios y administrador | Diseñada, fuera del corte |
 
 **Sistema externo:** el banco, con su servicio SOAP heredado. En el compose se simula con un servicio `banco-mock`, pero en el diagrama se muestra como externo porque no es parte del sistema.
@@ -202,7 +203,7 @@ Se comparan tres alternativas contra un baseline, que por definición puntúa 0 
 
 - **Sin BFF:** el esqueleto de la Clase 10 traía un BFF para una app mobile. Se elimina porque hay un solo tipo de cliente y el equipo es chico, que son justamente los casos en que un BFF no conviene.
 - **La conciliación corre dentro de la API**, como una tarea programada, en lugar de un contenedor aparte (ADR-004).
-- **Dónde se valida el token** (en la API o en un gateway) se decide en la etapa del 29/10, junto con el login. Por eso el diagrama todavía no muestra un gateway.
+- **El token se valida en un gateway** delante de la API (ADR-006). La API no publica su puerto: desde afuera solo se llega a ella a través del gateway.
 
 ---
 
@@ -268,13 +269,71 @@ El contrato completo va en `openapi.yaml` y se muestra con Swagger UI. Incluye s
 - **Versionado en la URI** (`/v1`).
 - **Errores con Problem Details** (`application/problem+json`).
 - **`PUT` para el código de pago:** si el propietario reintenta (por ejemplo, porque se le cortó la conexión), tiene que recibir el mismo código y no uno nuevo. `PUT` es idempotente por definición: la primera vez crea el código (201) y las siguientes lo devuelven (200).
-- La seguridad del contrato (`securitySchemes`) se agrega en la etapa del 29/10, junto con el login.
+- **Seguridad:** todas las operaciones, salvo `/health`, requieren un token de acceso (`securitySchemes` del contrato). Los permisos de cada rol están en la sección 9.
 
 ---
 
 ## 9. Seguridad
 
-*Pendiente (29/10): proveedor de identidad, roles y matriz de permisos.*
+### 9.1 Autenticación delegada
+
+La autenticación es un subdominio **genérico**: no se construye, se adopta. Se delega en un **proveedor de identidad** que implementa OpenID Connect (Keycloak), con un realm versionado en el repositorio que se importa al levantar el sistema (ADR-005). La aplicación nunca ve las contraseñas: recibe un token de acceso firmado.
+
+La **autorización**, en cambio, es en parte propia del dominio: el proveedor sabe quién tiene qué rol, pero qué puede hacer cada rol, y sobre qué unidades, lo decide el sistema.
+
+### 9.2 Actores y roles
+
+| Rol | Quién es | Usuarios de prueba |
+|---|---|---|
+| `propietario` | Ve y paga **su** expensa | `paula` (unidades 2B del consorcio 1 y 1A del consorcio 3), `pablo` (unidad 4C del consorcio 2) |
+| `administrador` | Liquida y concilia | `adriana` |
+
+### 9.3 Matriz de permisos
+
+| Operación | Propietario | Administrador | Sin token |
+|---|:-:|:-:|:-:|
+| `GET /health` | ✓ | ✓ | ✓ (público) |
+| `GET /v1/expensas` | ✓ solo las suyas | ✓ todas | 401 |
+| `GET /v1/expensas/{id}` | ✓ si es suya; si no, 403 | ✓ | 401 |
+| `PUT /v1/expensas/{id}/codigo-pago` | ✓ si es suya; si no, 403 | ✓ cualquiera | 401 |
+| `POST /v1/conciliaciones` | 403 | ✓ | 401 |
+| `GET /v1/conciliaciones/{id}` | 403 | ✓ | 401 |
+| `GET /v1/cobranzas` | 403 | ✓ | 401 |
+
+- **401:** falla la autenticación (no hay token, está vencido o su firma no es válida).
+- **403:** el usuario está autenticado, pero su rol o su relación con la unidad no le permiten la operación.
+- Los dos errores se devuelven en formato Problem Details.
+
+**Por qué el administrador puede pedir el código de pago:** la mayoría de los propietarios no tiene cuenta en el sistema y recibe el código impreso en la boleta de expensas que entrega el administrador. Pedir el código no mueve dinero: solo identifica la expensa ante el banco, y siempre es el mismo para cada expensa.
+
+### 9.4 Clientes y flujos
+
+| Cliente | Tipo | Flujo |
+|---|---|---|
+| Swagger UI (cliente del corte) | Público: corre en el navegador y no puede guardar un secreto | Authorization Code con PKCE, con redirect URI exacto |
+| Aplicación web (diseñada, fuera del corte) | Público | Authorization Code con PKCE |
+
+El token de acceso dura **5 minutos** y está emitido para la audiencia `api-expensas`: un token emitido para otra aplicación no sirve en esta.
+
+### 9.5 Dónde se valida el token
+
+En un **gateway** que es la única puerta de entrada a la API (ADR-006). En cada pedido verifica:
+
+1. la **firma**, con las claves públicas del proveedor de identidad (se descargan una vez y quedan en caché);
+2. el **emisor** (`iss`): lo emitió nuestro proveedor;
+3. la **audiencia** (`aud`): es para nuestra API;
+4. el **vencimiento** (`exp`);
+5. el **rol**, según la matriz de permisos.
+
+Si el pedido pasa, el gateway lo reenvía a la API agregando la identidad del usuario (`X-Usuario` y `X-Roles`). Antes borra esos encabezados si los mandó el cliente, para que nadie pueda hacerse pasar por otro usuario.
+
+### 9.6 La regla fina
+
+> Un propietario solo ve y paga **sus** expensas.
+
+El rol `propietario` no alcanza para expresarla: dice qué es el usuario, pero no de qué unidades es dueño. La resuelve la **API**, cruzando el usuario que recibe del gateway con el propietario de cada unidad, que es un dato del Padrón. Por eso esa regla no vive en el proveedor de identidad, que solo sabe quién tiene qué rol.
+
+El usuario se identifica por su nombre de usuario (`preferred_username`), que coincide con el que guarda el Padrón. En el realm, los usuarios no pueden cambiar su nombre de usuario.
 
 ## 10. Decisiones de arquitectura (ADRs)
 
@@ -284,6 +343,8 @@ El contrato completo va en `openapi.yaml` y se muestra con Swagger UI. Incluye s
 | [ADR-002](adr/ADR-002-base-relacional-unica.md) | Una sola base relacional (PostgreSQL), con el dinero en centavos | Aceptada |
 | [ADR-003](adr/ADR-003-integracion-banco-soap.md) | Integración con el banco: descarga diaria por SOAP con capa anticorrupción | Aceptada |
 | [ADR-004](adr/ADR-004-conciliacion-diaria.md) | La conciliación diaria corre dentro de la API | Aceptada |
+| [ADR-005](adr/ADR-005-proveedor-de-identidad.md) | Autenticación delegada en un proveedor de identidad OIDC (Keycloak) | Aceptada |
+| [ADR-006](adr/ADR-006-validacion-en-gateway.md) | El token se valida en un gateway, que reenvía la identidad a la API | Aceptada |
 
 ## 11. Verificación de NFRs
 
