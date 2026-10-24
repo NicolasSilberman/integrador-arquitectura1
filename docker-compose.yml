@@ -40,6 +40,28 @@ services:
     networks:
       - backend
 
+  # Proveedor de identidad OIDC (login y roles), ADR-005. Modo desarrollo: sin HTTPS.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2.5
+    command: ["start-dev", "--import-realm"]          # importa el realm "expensas" la primera vez
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin              # usuario de la consola de administración
+      KC_BOOTSTRAP_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD:?Falta KEYCLOAK_ADMIN_PASSWORD, copiala de .env.example a tu .env}"
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro       # bind mount: el realm versionado en el repo
+    ports:
+      - "8180:8080"                                    # 8080 ya lo usa swagger-ui en el host
+    healthcheck:
+      # La imagen no trae curl: se le pega al endpoint de salud (puerto 9000) con bash
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks:
+      - identidad
+
   # Banco SIMULADO: hace de servicio SOAP heredado del banco (sistema externo, ADR-003).
   # Solo para desarrollo y demo; en producción se reemplaza por el banco real.
   banco-mock:
@@ -67,3 +89,4 @@ volumes:
 
 networks:
   backend:
+  identidad:
