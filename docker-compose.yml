@@ -40,6 +40,26 @@ services:
     networks:
       - backend
 
+  # Gateway: la ÚNICA puerta de entrada a la API (ADR-006). Valida el token, aplica los permisos
+  # por rol y reenvía la identidad del usuario a la API (X-Usuario, X-Roles).
+  gateway:
+    build: ./gateway
+    environment:
+      PORT: 8000
+      API_URL: http://api:3000                                                       # por la red backend
+      JWKS_URL: http://keycloak:8080/realms/expensas/protocol/openid-connect/certs   # por la red identidad
+      ISSUER: http://localhost:8180/realms/expensas   # el "iss" que pone Keycloak cuando el navegador entra por localhost:8180
+      AUDIENCE: api-expensas
+      CORS_ORIGIN: http://localhost:8080
+    ports:
+      - "8000:8000"
+    depends_on:
+      - api
+      - keycloak       # alcanza con que arranque: las claves se piden recién con el primer token
+    networks:
+      - backend
+      - identidad
+
   # Proveedor de identidad OIDC (login y roles), ADR-005. Modo desarrollo: sin HTTPS.
   keycloak:
     image: quay.io/keycloak/keycloak:26.2.5
