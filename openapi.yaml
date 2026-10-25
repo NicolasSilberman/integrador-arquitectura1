@@ -12,9 +12,15 @@ info:
     - Versionado en la URI (`/v1`).
     - Errores en formato Problem Details (`application/problem+json`).
     - Los importes se expresan en centavos (enteros) para evitar errores de redondeo.
+    - **Seguridad:** login con OpenID Connect contra Keycloak. Todas las operaciones, salvo `/health`,
+      requieren un token de acceso. Para probar: botón **Authorize**, cliente `swagger-ui`, y login con
+      un usuario de prueba (`paula` o `pablo` como propietarios, `adriana` como administradora).
+    - Las llamadas pasan por el **gateway**, la única puerta de entrada a la API.
 servers:
-  - url: http://localhost:3000
-    description: API levantada con docker compose (vista desde tu navegador)
+  - url: http://localhost:8000
+    description: Gateway (la única puerta de entrada a la API), levantado con docker compose
+security:
+  - keycloak: [openid]
 tags:
   - name: Expensas
     description: Liquidación del mes y código de pago (propietario y administrador)
@@ -28,6 +34,7 @@ paths:
       tags: [Sistema]
       summary: Estado del servicio
       operationId: health
+      security: []      # público: no requiere token
       responses:
         '200':
           description: La API y la base de datos responden
@@ -60,6 +67,12 @@ paths:
           schema:
             $ref: '#/components/schemas/EstadoExpensa'
       responses:
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '503':
+          $ref: '#/components/responses/IdentidadNoDisponible'
         '200':
           description: Lista de expensas
           content:
@@ -80,6 +93,12 @@ paths:
       description: Detalle de la expensa con sus conceptos, su estado y, si ya está pagada, el pago imputado.
       operationId: obtenerExpensa
       responses:
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '503':
+          $ref: '#/components/responses/IdentidadNoDisponible'
         '200':
           description: La expensa
           content:
@@ -104,6 +123,12 @@ paths:
         el mismo (200). Así, si el propietario reintenta, nunca recibe un código distinto.
       operationId: obtenerCodigoDePago
       responses:
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '503':
+          $ref: '#/components/responses/IdentidadNoDisponible'
         '200':
           description: La expensa ya tenía código; se devuelve el mismo
           content:
@@ -158,6 +183,12 @@ paths:
             example:
               fecha: '2026-10-21'
       responses:
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '503':
+          $ref: '#/components/responses/IdentidadNoDisponible'
         '201':
           description: Conciliación ejecutada
           headers:
@@ -204,6 +235,12 @@ paths:
       summary: Obtener una corrida de conciliación
       operationId: obtenerConciliacion
       responses:
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '503':
+          $ref: '#/components/responses/IdentidadNoDisponible'
         '200':
           description: La corrida
           content:
@@ -227,6 +264,12 @@ paths:
             type: string
             enum: [IMPUTADA, OBSERVADA]
       responses:
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '503':
+          $ref: '#/components/responses/IdentidadNoDisponible'
         '200':
           description: Lista de cobranzas
           content:
@@ -239,6 +282,21 @@ paths:
           $ref: '#/components/responses/Invalido'
 
 components:
+  securitySchemes:
+    keycloak:
+      type: oauth2
+      description: |
+        OpenID Connect con Keycloak (realm `expensas`). Flujo Authorization Code con PKCE:
+        Swagger UI es un cliente público (`swagger-ui`) y no tiene secreto.
+        Descubrimiento OIDC: http://localhost:8180/realms/expensas/.well-known/openid-configuration
+      flows:
+        authorizationCode:
+          authorizationUrl: http://localhost:8180/realms/expensas/protocol/openid-connect/auth
+          tokenUrl: http://localhost:8180/realms/expensas/protocol/openid-connect/token
+          scopes:
+            openid: Identidad del usuario (OpenID Connect)
+            profile: Nombre y usuario
+
   parameters:
     ExpensaId:
       name: id
@@ -430,6 +488,41 @@ components:
           example: /v1/expensas/99
 
   responses:
+    NoAutenticado:
+      description: Falta el token, está vencido o no es válido (no sé quién sos)
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+            example: Bearer realm="expensas"
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: about:blank
+            title: No autenticado
+            status: 401
+            detail: 'Falta el header "Authorization: Bearer <token>".'
+            instance: /v1/expensas
+    SinPermiso:
+      description: El token es válido, pero el rol o la relación con la unidad no alcanzan (sé quién sos, pero no podés)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: about:blank
+            title: Sin permiso
+            status: 403
+            detail: paula tiene los roles [propietario] y esta operación requiere uno de [administrador].
+            instance: /v1/conciliaciones
+    IdentidadNoDisponible:
+      description: No se pudo validar el token porque el proveedor de identidad no responde
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
     NoEncontrado:
       description: El recurso no existe
       content:

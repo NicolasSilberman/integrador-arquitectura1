@@ -99,6 +99,9 @@ services:
     image: swaggerapi/swagger-ui:v5.17.14
     environment:
       SWAGGER_JSON: /spec/openapi.yaml
+      OAUTH_CLIENT_ID: swagger-ui       # cliente público registrado en el realm (sin secreto)
+      OAUTH_USE_PKCE: "true"            # Authorization Code + PKCE
+      OAUTH_SCOPES: openid profile
     volumes:
       - ./openapi.yaml:/spec/openapi.yaml:ro   # bind mount: editás el contrato y recargás, sin rebuild
     ports:
