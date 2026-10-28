@@ -1,11 +1,12 @@
-// API de expensas — versión "hola mundo" (avance del 22/10).
+// API de expensas — con datos de ejemplo (avances del 22/10 y 29/10).
 //
-// Implementa los endpoints del contrato (openapi.yaml) con DATOS DE EJEMPLO en memoria, para que el compose
-// levante y Swagger UI se pueda probar de punta a punta. Todavía no hay lógica de negocio:
-//   - las expensas, la conciliación y las cobranzas salen de los datos de ejemplo de este archivo;
-//   - la base solo se usa en /health;
-//   - todavía no hay login: GET /v1/expensas devuelve todas (el filtro por propietario llega el 29/10).
+// Implementa los endpoints del contrato (openapi.yaml) con DATOS DE EJEMPLO en memoria. Todavía no hay lógica
+// de negocio: las expensas, la conciliación y las cobranzas salen de este archivo, y la base solo se usa en /health.
 // La implementación real, organizada en módulos (Padrón, Liquidación, Cobranzas), reemplaza estos datos.
+//
+// Seguridad (ADR-006): la API no publica su puerto; solo se llega a ella a través del GATEWAY, que valida el token,
+// aplica los permisos por rol y reenvía la identidad en los encabezados X-Usuario y X-Roles.
+// Acá se resuelve la REGLA FINA: un propietario solo ve y paga SUS expensas.
 
 import express from 'express';
 import pg from 'pg';
@@ -20,15 +21,6 @@ const pool = new pg.Pool({
   database: process.env.DB_NAME ?? 'expensas',
   user: process.env.DB_USER ?? 'expensas',
   password: process.env.DB_PASSWORD,
-});
-
-// CORS: Swagger UI corre en otro origen (localhost:8080) y el navegador llama a localhost:3000
-app.use((req, res, next) => {
-  res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
-  next();
 });
 
 // Errores con Problem Details (RFC 9457)
@@ -56,7 +48,7 @@ const cobranzas = [
 
 const expensas = [
   {
-    id: 12, consorcio: 'Edificio Av. Vergara 1200', unidad: '2B', periodo: '2026-10',
+    id: 12, consorcio: 'Edificio Av. Vergara 1200', unidad: '2B', propietario: 'paula', periodo: '2026-10',
     vencimiento: '2026-11-10', estado: 'EMITIDA',
     conceptos: [
       { tipo: 'ORDINARIA', descripcion: 'Expensas ordinarias', monto: ars(4500000) },
@@ -64,7 +56,7 @@ const expensas = [
     ],
   },
   {
-    id: 13, consorcio: 'Edificio Av. Vergara 1200', unidad: '3A', periodo: '2026-10',
+    id: 13, consorcio: 'Edificio Av. Vergara 1200', unidad: '3A', propietario: null, periodo: '2026-10',
     vencimiento: '2026-11-10', estado: 'PAGADA',
     conceptos: [
       { tipo: 'ORDINARIA', descripcion: 'Expensas ordinarias', monto: ars(4100000) },
@@ -72,7 +64,7 @@ const expensas = [
     ],
   },
   {
-    id: 14, consorcio: 'Torre Pedro Díaz 450', unidad: '7C', periodo: '2026-10',
+    id: 14, consorcio: 'Torre Pedro Díaz 450', unidad: '4C', propietario: 'pablo', periodo: '2026-10',
     vencimiento: '2026-11-10', estado: 'EMITIDA',
     conceptos: [
       { tipo: 'ORDINARIA', descripcion: 'Expensas ordinarias', monto: ars(3900000) },
@@ -80,7 +72,17 @@ const expensas = [
       { tipo: 'FONDO_RESERVA', descripcion: 'Fondo de reserva', monto: ars(600000) },
     ],
   },
+  {
+    id: 15, consorcio: 'Edificio Jauretche 870', unidad: '1A', propietario: 'paula', periodo: '2026-10',
+    vencimiento: '2026-11-10', estado: 'EMITIDA',
+    conceptos: [
+      { tipo: 'ORDINARIA', descripcion: 'Expensas ordinarias', monto: ars(4300000) },
+      { tipo: 'FONDO_RESERVA', descripcion: 'Fondo de reserva', monto: ars(500000) },
+    ],
+  },
 ];
+// propietario = usuario del proveedor de identidad (null: la unidad no tiene cuenta en el sistema).
+// Coinciden con el Padrón de db/init.sql: paula es dueña de 2B (consorcio 1) y 1A (consorcio 3); pablo, de 4C (consorcio 2).
 
 // Expensas que ya tienen código de pago generado (la 13 lo tuvo antes de pagarse)
 const conCodigo = new Set([13]);
@@ -115,6 +117,23 @@ function detalle(e) {
 const PERIODO = /^[0-9]{4}-(0[1-9]|1[0-2])$/;
 const FECHA = /^\d{4}-\d{2}-\d{2}$/;
 
+// ---------------------------------------------------------------------------
+// Identidad (la pone el gateway) y regla fina
+// ---------------------------------------------------------------------------
+// Si falta la identidad, el pedido no vino por el gateway: se rechaza (ante la duda, se rechaza).
+app.use('/v1', (req, res, next) => {
+  const usuario = req.get('X-Usuario');
+  const roles = (req.get('X-Roles') ?? '').split(',').filter(Boolean);
+  if (!usuario || roles.length === 0) {
+    return problem(res, 401, 'No autenticado', 'El pedido no trae la identidad del usuario.', req.originalUrl);
+  }
+  req.identidad = { usuario, esAdministrador: roles.includes('administrador') };
+  next();
+});
+
+// Regla fina: el administrador accede a todas; el propietario, solo a las de sus unidades
+const puedeVer = (identidad, expensa) => identidad.esAdministrador || expensa.propietario === identidad.usuario;
+
 function buscarExpensa(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -124,6 +143,10 @@ function buscarExpensa(req, res) {
   const expensa = expensas.find((e) => e.id === id);
   if (!expensa) {
     problem(res, 404, 'Expensa no encontrada', `No existe una expensa con id ${id}.`, req.originalUrl);
+    return null;
+  }
+  if (!puedeVer(req.identidad, expensa)) {
+    problem(res, 403, 'Sin permiso', `La expensa ${id} no pertenece a una unidad de ${req.identidad.usuario}.`, req.originalUrl);
     return null;
   }
   return expensa;
@@ -146,6 +169,7 @@ app.get('/v1/expensas', (req, res) => {
     return problem(res, 400, 'Parámetro inválido', 'El estado debe ser EMITIDA o PAGADA.', req.originalUrl);
   }
   const lista = expensas
+    .filter((e) => puedeVer(req.identidad, e))
     .filter((e) => periodo === undefined || e.periodo === periodo)
     .filter((e) => estado === undefined || e.estado === estado);
   res.json(lista.map(resumen));

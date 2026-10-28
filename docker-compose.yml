@@ -32,8 +32,7 @@ services:
       DB_USER: ${DB_USER:-expensas}
       DB_PASSWORD: "${DB_PASSWORD:?Falta DB_PASSWORD, copiá .env.example como .env}"
       BANCO_URL: http://banco-mock:8090/soap   # el banco se alcanza por nombre de servicio
-    ports:
-      - "3000:3000"        # puerto_host:puerto_contenedor
+    # Sin puerto publicado: desde afuera solo se llega por el gateway (ADR-006)
     depends_on:
       db:
         condition: service_healthy   # espera a que Postgres responda, no solo a que arranque
