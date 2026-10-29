@@ -6,7 +6,7 @@
 |---|---|---|
 | 15/10 | Dominio y escenario, NFRs, C4 de Contexto | ✔ |
 | 22/10 | Pugh, estilo, C4 de Contenedores, modelo de dominio, OpenAPI; el compose levanta | ✔ |
-| 29/10 | Login con el proveedor de identidad | Pendiente |
+| 29/10 | Login con el proveedor de identidad, gateway y permisos por rol | ✔ |
 | 05/11 | Caso de uso, ADRs y verificación de NFRs | Pendiente |
 
 ---
@@ -196,6 +196,20 @@ Se comparan tres alternativas contra un baseline, que por definición puntúa 0 
 | Swagger UI | swagger-ui | Muestra el contrato OpenAPI y sirve como cliente de prueba del corte, con login OIDC | En el compose desde el 22/10 |
 | Proveedor de identidad | Keycloak | Login y roles (propietario, administrador), con el realm versionado en el repo | En el compose desde el 29/10 |
 | Aplicación web | SPA en el navegador | Interfaz para propietarios y administrador | Diseñada, fuera del corte |
+
+**Memoria de cada contenedor** (medida con `docker stats` el 29/10, con el sistema en reposo, en Docker Desktop sobre Windows):
+
+| Contenedor | Memoria |
+|---|---:|
+| Proveedor de identidad (Keycloak) | 725,2 MiB |
+| Base de datos (PostgreSQL) | 40,2 MiB |
+| Gateway | 21,5 MiB |
+| API de expensas | 14,7 MiB |
+| Swagger UI | 13,5 MiB |
+| Banco simulado | 9,4 MiB |
+| **Total** | **824,5 MiB** |
+
+El proveedor de identidad es el 88 % de la memoria del sistema: es el costo más alto de delegar la autenticación (ADR-005). Aun así, todo el sistema entra en un servidor de 2 GB, como pide el NFR de costo. Es una medición en reposo y sin carga, y el banco simulado no forma parte del despliegue real.
 
 **Sistema externo:** el banco, con su servicio SOAP heredado. En el compose se simula con un servicio `banco-mock`, pero en el diagrama se muestra como externo porque no es parte del sistema.
 
