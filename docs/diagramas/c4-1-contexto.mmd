@@ -1,0 +1,26 @@
+flowchart TB
+  prop["<b>Propietario</b><br/>[Persona]<br/>Ve su liquidación del mes<br/>y pide el código para pagarla"]
+  adm["<b>Administrador</b><br/>[Persona]<br/>Concilia las cobranzas y resuelve<br/>los pagos observados"]
+
+  subgraph limite[" "]
+    sis["<b>Sistema de expensas</b><br/>[Sistema de software]<br/>Liquidación mensual por unidad, códigos de pago,<br/>conciliación e imputación de cobranzas"]
+    idp["<b>Proveedor de identidad</b><br/>[Sistema de software · Keycloak]<br/>Login y roles (OpenID Connect)"]
+  end
+
+  banco["<b>Banco</b><br/>[Sistema externo · servicio SOAP heredado]<br/>Cobra en ventanilla/homebanking con el código<br/>e informa las cobranzas del día anterior"]
+
+  prop -->|"Consulta expensas y pide el código<br/>[HTTPS · JSON]"| sis
+  adm -->|"Dispara y revisa conciliaciones<br/>[HTTPS · JSON]"| sis
+  sis -->|"Delega el login<br/>[OIDC]"| idp
+  prop -.->|"Paga con el código<br/>(fuera del sistema)"| banco
+  sis -->|"Descarga la cobranza de ayer,<br/>una vez por día [SOAP · HTTP]"| banco
+
+  classDef persona fill:#dbe8ff,stroke:#2f5fa8,color:#0b1f3f
+  classDef propio fill:#1f5fbf,stroke:#12408a,color:#ffffff
+  classDef aux fill:#a8c3ee,stroke:#2f5fa8,color:#0b1f3f
+  classDef externo fill:#e4e4e4,stroke:#777,color:#222
+  class prop,adm persona
+  class sis propio
+  class idp aux
+  class banco externo
+  style limite fill:none,stroke:#999,stroke-dasharray:5 5

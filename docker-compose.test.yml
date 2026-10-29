@@ -1,0 +1,33 @@
+# Corre las pruebas de la API dentro de Docker, sin instalar nada:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm --build pruebas
+#
+# Crea una base descartable dentro del Postgres del compose, levanta su propio banco simulado y un proveedor de
+# identidad falso (no necesita Keycloak), y la borra al terminar. No toca los datos reales del volumen pgdata.
+
+services:
+  pruebas:
+    build:
+      context: ./api
+      target: pruebas              # incluye dependencias de desarrollo (validador del contrato OpenAPI)
+    working_dir: /app
+    command: ["node", "--test", "test/api.test.js", "test/traductor.test.js", "test/contrato.test.js"]
+    environment:
+      TEST_DB_HOST: db
+      TEST_DB_PORT: 5432
+      TEST_DB_USER: expensas
+      TEST_DB_PASSWORD: ${DB_PASSWORD:-expensas123}
+      TEST_DB_ADMIN: expensas
+      INIT_SQL: /db/init.sql
+      BANCO_MOCK: /banco-mock/index.js
+      OPENAPI: /openapi.yaml
+    volumes:
+      - ./api/test:/app/test:ro
+      - ./db/init.sql:/db/init.sql:ro
+      - ./banco-mock:/banco-mock:ro
+      - ./openapi.yaml:/openapi.yaml:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend

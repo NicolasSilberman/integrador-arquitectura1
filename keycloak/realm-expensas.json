@@ -1,0 +1,80 @@
+{
+  "realm": "expensas",
+  "displayName": "Expensas · Administración de consorcios",
+  "enabled": true,
+  "sslRequired": "none",
+  "internationalizationEnabled": true,
+  "supportedLocales": [ "es", "en" ],
+  "defaultLocale": "es",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "editUsernameAllowed": false,
+  "accessTokenLifespan": 300,
+  "roles": {
+    "realm": [
+      { "name": "propietario",   "description": "Ve su liquidación de expensas y la paga" },
+      { "name": "administrador", "description": "Liquida, concilia cobranzas y resuelve las observadas" }
+    ]
+  },
+  "users": [
+    {
+      "username": "paula",
+      "firstName": "Paula",
+      "lastName": "Gómez",
+      "email": "paula@expensas.local",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [ { "type": "password", "value": "paula123", "temporary": false } ],
+      "realmRoles": [ "propietario" ]
+    },
+    {
+      "username": "pablo",
+      "firstName": "Pablo",
+      "lastName": "Ríos",
+      "email": "pablo@expensas.local",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [ { "type": "password", "value": "pablo123", "temporary": false } ],
+      "realmRoles": [ "propietario" ]
+    },
+    {
+      "username": "adriana",
+      "firstName": "Adriana",
+      "lastName": "Administradora",
+      "email": "adriana@expensas.local",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [ { "type": "password", "value": "adriana123", "temporary": false } ],
+      "realmRoles": [ "administrador" ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "swagger-ui",
+      "name": "Swagger UI (cliente público)",
+      "description": "Corre en el navegador: no puede guardar un secreto. Usa Authorization Code + PKCE.",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [ "http://localhost:8080/oauth2-redirect.html" ],
+      "webOrigins": [ "http://localhost:8080" ],
+      "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "http://localhost:8080/*" },
+      "protocolMappers": [
+        {
+          "name": "audiencia-api-expensas",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "api-expensas",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ]
+}

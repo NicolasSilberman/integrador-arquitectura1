@@ -1,0 +1,22 @@
+{
+  "name": "expensas-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "fast-xml-parser": "^4.5.0",
+    "jose": "^6.0.11",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "yaml": "^2.6.0"
+  }
+}

@@ -1,0 +1,41 @@
+sequenceDiagram
+  autonumber
+  actor P as Propietario (paula)
+  participant C as Cliente (Swagger UI)
+  participant K as Keycloak
+  participant A as API de expensas
+  participant D as PostgreSQL
+  participant B as Banco (SOAP)
+  actor M as Administrador / planificador
+
+  Note over P,K: 1. Login (OIDC · Authorization Code + PKCE)
+  P->>C: Authorize
+  C->>K: redirige al login
+  K-->>C: código → token de acceso (JWT firmado, 5 min)
+
+  Note over P,D: 2. Ver la liquidación y pedir el código de pago
+  C->>A: GET /v1/expensas?periodo=2026-10 (Bearer)
+  A->>A: valida firma, iss, aud, exp · rol propietario
+  A->>D: expensas de SUS unidades
+  A-->>C: 200 lista (total = suma de conceptos)
+  C->>A: PUT /v1/expensas/12/codigo-pago
+  A->>D: SELECT … FOR UPDATE · fija el código (si no tenía)
+  A-->>C: 201 código (repetir → 200, mismo código)
+
+  Note over P,B: 3. Pago fuera del sistema
+  P->>B: paga con el código (ventanilla / homebanking)
+
+  Note over M,D: 4. Al día siguiente: conciliación (automática 07:00 o manual)
+  M->>A: POST /v1/conciliaciones {fecha}
+  A->>A: candado (no corren dos a la vez) · registra la corrida
+  A->>B: SOAP ConsultarCobranzasDelDia
+  B-->>A: cobranzas (formato heredado → la ACL lo traduce)
+  loop cada cobranza (una transacción por cobranza)
+    A->>D: reclama banco_ref (ON CONFLICT DO NOTHING)
+    A->>D: imputa a la expensa (FOR UPDATE, exacta, una sola vez)
+  end
+  A-->>M: 201 {leidas, imputadas, observadas, yaProcesadas}
+
+  Note over P,D: 5. El propietario ve el resultado
+  C->>A: GET /v1/expensas/12
+  A-->>C: 200 estado PAGADA + pago imputado

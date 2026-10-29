@@ -1,0 +1,119 @@
+# Sistema de expensas — Arquitectura de Software 1 (UNAHUR) — TP Integrador, escenario 5A
+# Un solo comando levanta todo:   docker compose up -d --build        (o: podman compose up -d --build)
+#
+# Los valores ${VAR:-defecto} se toman del archivo .env si existe (copiá .env.example a .env).
+# Los defectos permiten que el jurado levante el sistema desde cero sin configurar nada.
+
+name: expensas
+
+services:
+
+  # Base de datos. NO publica puertos: solo la ven los servicios de la red "backend".
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: expensas
+      POSTGRES_USER: expensas
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-expensas123}
+    volumes:
+      - pgdata:/var/lib/postgresql/data                          # volumen con nombre: los datos sobreviven a los contenedores
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro    # esquema + datos de ejemplo (solo la primera vez)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U expensas -d expensas"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - backend
+
+  # La API: el monolito modular (padrón, liquidaciones, cobranzas). Valida ella misma los tokens (ADR-006).
+  api:
+    build: ./api
+    environment:
+      PORT: 3000
+      DB_HOST: db                       # service discovery: el nombre del servicio ES el hostname
+      DB_PORT: 5432
+      DB_NAME: expensas
+      DB_USER: expensas
+      DB_PASSWORD: ${DB_PASSWORD:-expensas123}
+      # Las claves públicas se buscan por la red interna ("keycloak")...
+      JWKS_URL: http://keycloak:8080/realms/expensas/protocol/openid-connect/certs
+      # ...pero el emisor del token es la URL que ve el NAVEGADOR (por eso localhost:8180).
+      ISSUER: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8180}/realms/expensas
+      AUDIENCE: api-expensas
+      CORS_ORIGIN: http://localhost:8080
+      BANCO_URL: http://banco-mock:8090/soap
+      CONCILIACION_AUTOMATICA: ${CONCILIACION_AUTOMATICA:-true}
+      CONCILIACION_HORA: ${CONCILIACION_HORA:-07:00}
+      ZONA_HORARIA: America/Argentina/Buenos_Aires
+    ports:
+      - "3000:3000"                      # puerto_host:puerto_contenedor — la ÚNICA puerta de entrada al sistema
+    depends_on:
+      db:
+        condition: service_healthy       # espera a que Postgres responda, no solo a que arranque
+      banco-mock:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped              # sin guardia: si el proceso se cae, Docker lo levanta de nuevo
+    networks:
+      - backend
+      - identidad
+
+  # Proveedor de identidad OIDC (login, roles). Modo desarrollo: sin HTTPS (ver ADR-005 sobre producción).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2.5
+    command: ["start-dev", "--import-realm"]            # importa el realm "expensas" la primera vez
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro         # bind mount: el realm versionado en el repo es la fuente de verdad
+    ports:
+      - "8180:8080"                                      # 8080 ya lo usa swagger-ui en el host
+    healthcheck:
+      # La imagen no trae curl: se le pega al endpoint de salud (puerto 9000) con bash
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks:
+      - identidad
+
+  # Banco SIMULADO: hace de servicio SOAP heredado. Solo para pruebas y demo (consola en http://localhost:8090).
+  banco-mock:
+    build: ./banco-mock
+    environment:
+      PORT: 8090
+      ZONA_HORARIA: America/Argentina/Buenos_Aires
+    ports:
+      - "8090:8090"
+    networks:
+      - backend
+
+  # Documentación de la API generada desde el contrato OpenAPI, con login contra Keycloak (cliente público + PKCE).
+  # No está en ninguna red interna: quien llama a la API es tu navegador.
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    environment:
+      SWAGGER_JSON: /spec/openapi.yaml
+      OAUTH_CLIENT_ID: swagger-ui
+      OAUTH_USE_PKCE: "true"
+      OAUTH_SCOPES: openid profile
+    volumes:
+      - ./openapi.yaml:/spec/openapi.yaml:ro            # editás el contrato, recargás, sin rebuild
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:
+
+networks:
+  backend:
+  identidad:

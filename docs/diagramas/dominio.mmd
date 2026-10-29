@@ -1,0 +1,52 @@
+classDiagram
+  direction LR
+  class Consorcio {
+    id
+    nombre
+    direccion
+  }
+  class Unidad {
+    id
+    codigo
+    propietarioUsuario
+  }
+  class Expensa {
+    <<Aggregate Root>>
+    id
+    periodo
+    vencimiento
+    estado : EMITIDA | PAGADA
+    codigoPago
+    total() = suma de conceptos
+  }
+  class Concepto {
+    descripcion
+    monto : Dinero
+  }
+  class Dinero {
+    <<Value Object>>
+    centavos : entero
+    moneda : ARS
+  }
+  class Cobranza {
+    <<Aggregate Root>>
+    bancoRef : único
+    codigoPago
+    monto : Dinero
+    fechaPago
+    estado : IMPUTADA | OBSERVADA
+    motivo
+  }
+  class Conciliacion {
+    <<Registro de corrida>>
+    fechaCobranzas
+    origen : AUTOMATICA | MANUAL
+    estado : OK | ERROR
+    leidas · imputadas · observadas
+  }
+  Consorcio "1" --> "*" Unidad
+  Unidad "1" --> "*" Expensa : una por período
+  Expensa "1" *-- "1..*" Concepto
+  Concepto --> Dinero
+  Cobranza "0..1" --> "1" Expensa : imputa a
+  Conciliacion "1" --> "*" Cobranza : procesó

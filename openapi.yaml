@@ -1,0 +1,470 @@
+openapi: 3.1.0
+info:
+  title: API de Expensas
+  version: 1.0.0
+  description: |
+    Contrato de la API del sistema de expensas (TP Integrador, escenario 5A: administrador independiente).
+    Este archivo es la **fuente de verdad**: se escribió antes que el código (*contract-first*) y Swagger UI genera
+    esta documentación a partir de él.
+
+    **Cómo probarla.** Tocá **Authorize**, dejá el `client_secret` vacío, tildá `openid` y `profile` y logueate en Keycloak:
+
+    | Usuario | Contraseña | Rol | Qué puede hacer |
+    |---|---|---|---|
+    | `paula` | `paula123` | propietario | Ver sus expensas (dueña de 2 unidades), generar el código de pago |
+    | `pablo` | `pablo123` | propietario | Ver sus expensas (dueño de 1 unidad) |
+    | `adriana` | `adriana123` | administrador | Ver todas las expensas, conciliar cobranzas, ver las observadas |
+
+    **El flujo de negocio** (caso de uso mínimo): el propietario ve su liquidación → pide el **código de pago** →
+    paga en el banco con ese código → al día siguiente el sistema descarga la cobranza del banco y la **concilia**
+    (o el administrador la dispara a mano) → la expensa queda `PAGADA` con el pago imputado.
+    El banco simulado está en http://localhost:8090 (ahí se "paga" durante la demo).
+
+    **Convenciones.**
+    - Los errores son siempre `application/problem+json` (RFC 9457).
+    - El dinero se expresa en **centavos enteros** (`{"centavos": 5200050, "moneda": "ARS"}` = $ 52.000,50): nunca decimales.
+    - Versionado en la URI (`/v1`). Agregar campos opcionales no cambia la versión; renombrar o quitar sí.
+    - Nunca se cobra dos veces la misma expensa: ver `PUT .../codigo-pago` y `POST /v1/conciliaciones`.
+  license:
+    name: Uso académico — UNAHUR, Arquitectura de Software 1
+servers:
+  - url: http://localhost:3000
+    description: API (única puerta de entrada al sistema)
+security:
+  - keycloak: [openid]
+tags:
+  - name: Expensas
+    description: Liquidación mensual de cada unidad funcional
+  - name: Conciliación
+    description: Descarga de la cobranza del banco e imputación de pagos (solo administrador)
+  - name: Salud
+    description: Verificación de que la API y su base responden
+paths:
+  /health:
+    get:
+      tags: [Salud]
+      summary: Estado del servicio
+      operationId: salud
+      description: Público (sin token). Lo usan el healthcheck de Docker y el monitoreo.
+      security: []
+      responses:
+        '200':
+          description: La API y su base de datos responden
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, examples: [ok] }
+        '503':
+          $ref: '#/components/responses/BaseNoDisponible'
+  /v1/expensas:
+    get:
+      tags: [Expensas]
+      summary: Listar expensas
+      operationId: listarExpensas
+      description: |
+        **Rol requerido:** propietario o administrador.
+        El propietario recibe solo las expensas de **sus** unidades; el administrador, las de todas.
+      parameters:
+        - name: periodo
+          in: query
+          description: Período de liquidación (AAAA-MM)
+          schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$' }
+          example: '2026-10'
+        - name: estado
+          in: query
+          schema: { $ref: '#/components/schemas/EstadoExpensa' }
+      responses:
+        '200':
+          description: Lista de expensas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ExpensaResumen' }
+        '400': { $ref: '#/components/responses/Invalido' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/SinPermiso' }
+  /v1/expensas/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ExpensaId'
+    get:
+      tags: [Expensas]
+      summary: Ver una liquidación
+      operationId: obtenerExpensa
+      description: |
+        **Rol requerido:** propietario (solo de sus unidades) o administrador.
+        Incluye el detalle de conceptos —el total es siempre la suma de ellos— y, si ya se pagó, el pago imputado.
+      responses:
+        '200':
+          description: La expensa con sus conceptos
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExpensaDetalle' }
+        '400': { $ref: '#/components/responses/Invalido' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/SinPermiso' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+  /v1/expensas/{id}/codigo-pago:
+    parameters:
+      - $ref: '#/components/parameters/ExpensaId'
+    put:
+      tags: [Expensas]
+      summary: Generar el código de pago
+      operationId: generarCodigoDePago
+      description: |
+        **Rol requerido:** propietario de la unidad.
+        El propietario pide el código con el que va a pagar en el banco. **Es idempotente**: cada expensa tiene
+        *un único* código, así que repetir el pedido (un doble clic, un reintento por corte de red) devuelve el
+        mismo código —`201` la primera vez, `200` las siguientes— y nunca crea un segundo código "vivo".
+        Se usa `PUT` porque la URI es conocida (la expensa tiene *su* código). Si la expensa ya está pagada: `409`.
+      responses:
+        '201':
+          description: Código generado
+          headers:
+            Location:
+              description: URI del código de pago
+              schema: { type: string, examples: [/v1/expensas/12/codigo-pago] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodigoPago' }
+        '200':
+          description: La expensa ya tenía código; se devuelve el mismo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodigoPago' }
+        '400': { $ref: '#/components/responses/Invalido' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/SinPermiso' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409':
+          description: La expensa ya está pagada
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetails' }
+              example:
+                type: https://expensas.example/problemas/expensa-ya-pagada
+                title: Expensa ya pagada
+                status: 409
+                detail: 'La expensa 12 ya está pagada: no se puede generar un código de pago.'
+                instance: /v1/expensas/12/codigo-pago
+    get:
+      tags: [Expensas]
+      summary: Consultar el código de pago
+      operationId: obtenerCodigoDePago
+      description: '**Rol requerido:** propietario de la unidad.'
+      responses:
+        '200':
+          description: El código de pago de la expensa
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CodigoPago' }
+        '400': { $ref: '#/components/responses/Invalido' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/SinPermiso' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+  /v1/conciliaciones:
+    post:
+      tags: [Conciliación]
+      summary: Conciliar la cobranza de un día
+      operationId: conciliar
+      description: |
+        **Rol requerido:** administrador.
+        Descarga del banco (servicio SOAP heredado) la cobranza de un día y la imputa a las expensas. Es lo mismo que
+        hace el sistema solo todas las mañanas; este endpoint sirve para **reintentar a mano** si el banco falló.
+
+        **Seguridad ante reintentos:** cada cobranza del banco se procesa *una sola vez* (por su número de
+        operación). Repetir la conciliación de un mismo día no imputa nada de nuevo. Un pago de más sobre una
+        expensa ya pagada no se imputa: queda **observado** para que el administrador lo resuelva.
+        Si el banco no responde: `502`; la corrida queda registrada con error y se puede reintentar.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fecha:
+                  type: string
+                  format: date
+                  description: Día de cobranzas a conciliar. Por defecto, ayer.
+                  examples: ['2026-10-27']
+      responses:
+        '201':
+          description: Corrida terminada
+          headers:
+            Location:
+              schema: { type: string, examples: [/v1/conciliaciones/8] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Conciliacion' }
+        '400': { $ref: '#/components/responses/Invalido' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/SinPermiso' }
+        '409':
+          description: Ya hay una conciliación en ejecución
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetails' }
+        '422':
+          description: La fecha es futura
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetails' }
+        '502':
+          description: El banco no respondió o respondió algo inválido
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ProblemDetails'
+                  - type: object
+                    properties:
+                      conciliacionId: { type: integer, description: La corrida que quedó registrada con error }
+        '503': { $ref: '#/components/responses/IdentidadNoDisponible' }
+    get:
+      tags: [Conciliación]
+      summary: Listar las últimas conciliaciones
+      operationId: listarConciliaciones
+      description: '**Rol requerido:** administrador. Es lo primero que se mira para saber si "lo de anoche" falló.'
+      responses:
+        '200':
+          description: Las últimas 50 corridas, la más reciente primero
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Conciliacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/SinPermiso' }
+  /v1/conciliaciones/{id}:
+    get:
+      tags: [Conciliación]
+      summary: Ver una conciliación con las cobranzas que procesó
+      operationId: obtenerConciliacion
+      description: '**Rol requerido:** administrador.'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: La corrida y sus cobranzas
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Conciliacion'
+                  - type: object
+                    properties:
+                      cobranzas:
+                        type: array
+                        items: { $ref: '#/components/schemas/Cobranza' }
+        '400': { $ref: '#/components/responses/Invalido' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/SinPermiso' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+  /v1/cobranzas:
+    get:
+      tags: [Conciliación]
+      summary: Listar cobranzas
+      operationId: listarCobranzas
+      description: |
+        **Rol requerido:** administrador. Con `estado=OBSERVADA` devuelve lo que hay que resolver a mano:
+        códigos desconocidos, pagos duplicados e importes que no coinciden con la expensa.
+      parameters:
+        - name: estado
+          in: query
+          schema: { type: string, enum: [IMPUTADA, OBSERVADA] }
+      responses:
+        '200':
+          description: Las últimas 500 cobranzas que cumplen el filtro
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Cobranza' }
+        '400': { $ref: '#/components/responses/Invalido' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/SinPermiso' }
+components:
+  securitySchemes:
+    keycloak:
+      type: oauth2
+      description: |
+        OpenID Connect con Keycloak. Flujo Authorization Code con PKCE (cliente público `swagger-ui`).
+        Descubrimiento OIDC: http://localhost:8180/realms/expensas/.well-known/openid-configuration
+      flows:
+        authorizationCode:
+          authorizationUrl: http://localhost:8180/realms/expensas/protocol/openid-connect/auth
+          tokenUrl: http://localhost:8180/realms/expensas/protocol/openid-connect/token
+          scopes:
+            openid: Identidad del usuario (OIDC)
+            profile: Nombre y usuario
+  parameters:
+    ExpensaId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+      example: 1
+  schemas:
+    EstadoExpensa:
+      type: string
+      enum: [EMITIDA, PAGADA]
+    Dinero:
+      type: object
+      description: Importe en centavos enteros. Nunca se usan decimales para dinero.
+      required: [centavos, moneda]
+      properties:
+        centavos: { type: integer, examples: [5200050] }
+        moneda: { type: string, enum: [ARS] }
+    Unidad:
+      type: object
+      required: [id, codigo, consorcio]
+      properties:
+        id: { type: integer }
+        codigo: { type: string, description: Piso y departamento, examples: [1A] }
+        consorcio:
+          type: object
+          required: [id, nombre]
+          properties:
+            id: { type: integer }
+            nombre: { type: string, examples: [Edificio Alvear] }
+    ExpensaResumen:
+      type: object
+      required: [id, periodo, vencimiento, estado, total, unidad]
+      properties:
+        id: { type: integer }
+        periodo: { type: string, examples: ['2026-10'] }
+        vencimiento: { type: string, format: date, examples: ['2026-11-10'] }
+        estado: { $ref: '#/components/schemas/EstadoExpensa' }
+        total: { $ref: '#/components/schemas/Dinero' }
+        codigoPago:
+          type: [string, 'null']
+          description: Nulo hasta que el propietario lo pide
+        unidad: { $ref: '#/components/schemas/Unidad' }
+    ExpensaDetalle:
+      allOf:
+        - $ref: '#/components/schemas/ExpensaResumen'
+        - type: object
+          required: [conceptos]
+          properties:
+            conceptos:
+              type: array
+              items:
+                type: object
+                required: [descripcion, monto]
+                properties:
+                  descripcion: { type: string, examples: [Expensas ordinarias] }
+                  monto: { $ref: '#/components/schemas/Dinero' }
+            pago:
+              description: El pago imputado; nulo si la expensa no está pagada
+              oneOf:
+                - type: 'null'
+                - type: object
+                  required: [fechaPago, bancoRef, monto]
+                  properties:
+                    fechaPago: { type: string, format: date }
+                    bancoRef: { type: string, description: Número de operación en el banco }
+                    monto: { $ref: '#/components/schemas/Dinero' }
+    CodigoPago:
+      type: object
+      description: Código con el que el propietario paga en el banco (11 dígitos, el último es verificador).
+      required: [expensaId, codigoPago, importe, vencimiento]
+      properties:
+        expensaId: { type: integer }
+        codigoPago: { type: string, examples: ['00000000125'] }
+        importe: { $ref: '#/components/schemas/Dinero' }
+        vencimiento: { type: string, format: date }
+    Conciliacion:
+      type: object
+      required: [id, fechaCobranzas, origen, estado, leidas, imputadas, observadas, yaProcesadas]
+      properties:
+        id: { type: integer }
+        fechaCobranzas: { type: string, format: date, description: Día de cobranzas que se descargó del banco }
+        origen: { type: string, enum: [AUTOMATICA, MANUAL] }
+        solicitadaPor: { type: [string, 'null'] }
+        estado: { type: string, enum: [EN_CURSO, OK, ERROR] }
+        leidas: { type: integer, description: Cobranzas que informó el banco }
+        imputadas: { type: integer, description: Pagos imputados a una expensa en esta corrida }
+        observadas: { type: integer, description: Pagos que no se pudieron imputar y requieren revisión }
+        yaProcesadas: { type: integer, description: Cobranzas que ya se habían procesado antes (no se repiten) }
+        error: { type: [string, 'null'] }
+        iniciadaEn: { type: string, format: date-time }
+        finalizadaEn: { type: [string, 'null'], format: date-time }
+    Cobranza:
+      type: object
+      required: [id, bancoRef, codigoPago, monto, fechaPago, estado]
+      properties:
+        id: { type: integer }
+        conciliacionId: { type: integer }
+        bancoRef: { type: string, description: Número de operación en el banco (único) }
+        codigoPago: { type: string }
+        monto: { $ref: '#/components/schemas/Dinero' }
+        fechaPago: { type: string, format: date }
+        estado: { type: string, enum: [IMPUTADA, OBSERVADA] }
+        motivo:
+          type: [string, 'null']
+          enum: [CODIGO_DESCONOCIDO, PAGO_DUPLICADO, MONTO_DISTINTO, null]
+          description: Por qué quedó observada
+        expensaId: { type: [integer, 'null'] }
+        procesadaEn: { type: string, format: date-time }
+    ProblemDetails:
+      description: Formato de error estándar (RFC 9457)
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri, examples: ['https://expensas.example/problemas/expensa-no-encontrada'] }
+        title: { type: string, examples: [Expensa no encontrada] }
+        status: { type: integer, examples: [404] }
+        detail: { type: string, examples: [No existe una expensa con id 99.] }
+        instance: { type: string, examples: [/v1/expensas/99] }
+  responses:
+    Invalido:
+      description: Parámetros o datos de entrada inválidos
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    NoAutenticado:
+      description: Falta el token, está vencido o su firma no es válida (no sé quién sos)
+      headers:
+        WWW-Authenticate:
+          schema: { type: string, examples: ['Bearer realm="expensas"'] }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+          example:
+            type: https://expensas.example/problemas/no-autenticado
+            title: No autenticado
+            status: 401
+            detail: 'Falta el header "Authorization: Bearer <token>".'
+            instance: /v1/expensas
+    SinPermiso:
+      description: El token es válido pero el rol (o la propiedad de la unidad) no alcanza (sé quién sos, pero no podés)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+          example:
+            type: https://expensas.example/problemas/sin-permiso
+            title: Sin permiso
+            status: 403
+            detail: 'paula tiene los roles [propietario] y esta operación requiere uno de [administrador].'
+            instance: /v1/conciliaciones
+    NoEncontrado:
+      description: El recurso no existe
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    BaseNoDisponible:
+      description: La API no puede conectarse a la base de datos
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    IdentidadNoDisponible:
+      description: No se pudo verificar el token porque el proveedor de identidad no responde
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }

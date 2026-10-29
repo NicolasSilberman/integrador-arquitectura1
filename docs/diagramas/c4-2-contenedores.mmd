@@ -1,0 +1,40 @@
+flowchart TB
+  prop["<b>Propietario</b><br/>[Persona]"]
+  adm["<b>Administrador</b><br/>[Persona]"]
+
+  subgraph sistema["Sistema de expensas — se despliega con un solo docker compose"]
+    direction TB
+    spa["<b>Aplicación web</b><br/>[SPA · navegador]<br/><i>Diseñada, fuera del corte:<br/>hoy la reemplaza Swagger UI</i>"]
+    swagger["<b>Swagger UI</b><br/>[Contenedor · swagger-ui]<br/>Documenta el contrato OpenAPI y<br/>sirve de cliente de prueba (OIDC + PKCE)"]
+    api["<b>API de expensas</b><br/>[Contenedor · Node.js + Express]<br/>MONOLITO MODULAR<br/>módulos: padrón · liquidaciones · cobranzas<br/>+ ACL del banco + planificador diario<br/>Valida el token y aplica roles"]
+    db[("<b>Base de datos</b><br/>[Contenedor · PostgreSQL 16]<br/>Volumen pgdata · sin puerto publicado")]
+    kc["<b>Proveedor de identidad</b><br/>[Contenedor · Keycloak]<br/>Realm versionado en el repo<br/>Roles: propietario, administrador"]
+    mock["<b>Banco simulado</b><br/>[Contenedor · Node.js]<br/>Mock del servicio SOAP heredado<br/>+ consola para &quot;pagar&quot; en la demo"]
+  end
+
+  banco["<b>Banco real</b><br/>[Sistema externo · SOAP]"]
+
+  prop --> spa
+  adm --> spa
+  prop -.->|"hoy"| swagger
+  adm -.->|"hoy"| swagger
+  spa -->|"JSON/HTTPS<br/>Bearer token"| api
+  swagger -->|"JSON/HTTP<br/>Bearer token"| api
+  spa -->|"Login OIDC + PKCE"| kc
+  swagger -->|"Login OIDC + PKCE"| kc
+  api -->|"SQL · db:5432"| db
+  api -->|"Claves públicas JWKS<br/>keycloak:8080"| kc
+  api -->|"SOAP · banco-mock:8090<br/>1 vez por día"| mock
+  mock -. "en producción se reemplaza por" .-> banco
+
+  classDef persona fill:#dbe8ff,stroke:#2f5fa8,color:#0b1f3f
+  classDef propio fill:#1f5fbf,stroke:#12408a,color:#ffffff
+  classDef aux fill:#a8c3ee,stroke:#2f5fa8,color:#0b1f3f
+  classDef pendiente fill:#f4f4f4,stroke:#888,stroke-dasharray:5 5,color:#444
+  classDef externo fill:#e4e4e4,stroke:#777,color:#222
+  class prop,adm persona
+  class api,db propio
+  class swagger,kc,mock aux
+  class spa pendiente
+  class banco externo
+  style sistema fill:none,stroke:#666
