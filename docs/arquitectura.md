@@ -211,7 +211,7 @@ Se comparan tres alternativas contra un baseline, que por definición puntúa 0 
 
 El proveedor de identidad es el 88 % de la memoria del sistema: es el costo más alto de delegar la autenticación (ADR-005). Aun así, todo el sistema entra en un servidor de 2 GB, como pide el NFR de costo. Es una medición en reposo y sin carga, y el banco simulado no forma parte del despliegue real.
 
-**Sistema externo:** el banco, con su servicio SOAP heredado. En el compose se simula con un servicio `banco-mock`, pero en el diagrama se muestra como externo porque no es parte del sistema.
+**Sistema externo:** el banco, con su servicio SOAP heredado. La API se autentica ante él con una API key (ADR-010). En el compose se simula con un servicio `banco-mock`, pero en el diagrama se muestra como externo porque no es parte del sistema.
 
 **Decisiones reflejadas en el diagrama**
 
@@ -262,6 +262,22 @@ Los agregados se diseñan lo más chicos posible, siempre que sigan protegiendo 
 | **Código de pago** | Identifica una expensa ante el banco; incluye un dígito verificador para detectar errores de tipeo |
 | **Porcentual** | Proporción de los gastos que le corresponde a una unidad |
 
+### 7.4 Cómo se garantiza que nunca se cobre dos veces
+
+Es el NFR estrella del escenario. La conciliación lo garantiza con varias capas, de modo que si una falla, la siguiente igual protege el invariante (ADR-007):
+
+| Riesgo | Cómo se evita |
+|---|---|
+| La misma operación del banco llega dos veces (reintento, reproceso del mismo día) | Cada operación se registra por su identificador del banco, que es único en la base: la segunda vez se reconoce como "ya procesada" y no se vuelve a imputar |
+| Dos conciliaciones corren al mismo tiempo | Un candado en la base permite una sola conciliación a la vez; la segunda recibe 409 |
+| Dos cobranzas distintas para la misma expensa (el propietario pagó dos veces) | Se imputa la primera; la segunda queda **observada** con el motivo "pago duplicado" |
+| Un pago que no coincide (monto distinto, código inexistente) | No se imputa: queda observado con su motivo para que lo revise el administrador |
+| Un error en el código que intente imputar dos veces | La base lo rechaza: un índice único admite a lo sumo una cobranza imputada por expensa |
+
+Cada cobranza se procesa en su **propia transacción**, con la expensa bloqueada mientras se imputa: una cobranza con problemas no frena a las demás, y nunca queda una expensa a medio actualizar.
+
+**Código de pago:** se deriva del id de la expensa (10 dígitos) más un dígito verificador, así que siempre es el mismo para cada expensa y un error de tipeo se detecta. Se guarda en la base la primera vez que se pide.
+
 ---
 
 ## 8. API
@@ -272,8 +288,8 @@ El contrato completo va en `openapi.yaml` y se muestra con Swagger UI. Incluye s
 |---|---|---|
 | `GET /v1/expensas?periodo=` | propietario / administrador | El propietario ve las expensas de sus unidades; el administrador, todas |
 | `GET /v1/expensas/{id}` | propietario / administrador | Detalle de una expensa con sus conceptos y su estado |
-| `PUT /v1/expensas/{id}/codigo-pago` | propietario | Obtiene el código de pago |
-| `POST /v1/conciliaciones` | administrador | Concilia una fecha a mano (la conciliación automática corre sola cada mañana) |
+| `PUT /v1/expensas/{id}/codigo-pago` | propietario (las suyas) / administrador | Obtiene el código de pago |
+| `POST /v1/conciliaciones` | administrador | Descarga del banco el listado de una fecha y lo concilia a mano (la conciliación automática corre sola cada mañana, ADR-004) |
 | `GET /v1/conciliaciones/{id}` | administrador | Resultado de una corrida |
 | `GET /v1/cobranzas?estado=OBSERVADA` | administrador | Pagos observados para revisar |
 
@@ -349,6 +365,20 @@ El rol `propietario` no alcanza para expresarla: dice qué es el usuario, pero n
 
 El usuario se identifica por su nombre de usuario (`preferred_username`), que coincide con el que guarda el Padrón. En el realm, los usuarios no pueden cambiar su nombre de usuario.
 
+### 9.7 Seguridad en las demás capas
+
+Autenticar y autorizar es una capa de la seguridad. Las demás se resuelven así (defensa en profundidad: cada capa asume que la anterior puede fallar):
+
+| Capa | Decisión | ADR |
+|---|---|---|
+| Datos | La API se conecta con un **usuario propio** que solo puede leer y escribir sus tablas: no puede borrar tablas, crearlas ni borrar filas. El superusuario se usa solo para inicializar la base | ADR-008 |
+| Sistema operativo y contenedores | Los contenedores propios corren con un **usuario sin privilegios** (no root), sobre imágenes oficiales con versión fija. Solo se publican los puertos necesarios | ADR-008 |
+| Red y transporte | En producción, **TLS termina en el gateway**, con redirección a HTTPS y HSTS. En la demo no hay TLS porque todo corre en `localhost` | ADR-009 |
+| Cuentas | En producción, **segundo factor (TOTP) obligatorio para el administrador**, que es quien concilia el dinero. En la demo está desactivado | ADR-009 |
+| Integración con el banco | La API se autentica ante el banco con una **API key**, que vive en el `.env` | ADR-010 |
+| Aplicación web | El gateway agrega headers de seguridad, el CORS solo admite el origen propio y los errores no exponen detalles internos | — |
+| Secretos | Las contraseñas reales van en el `.env`, fuera del repositorio. Las de los usuarios de prueba están en el realm versionado porque son de demostración; en producción vendrían de un gestor de secretos | — |
+
 ## 10. Decisiones de arquitectura (ADRs)
 
 | ADR | Decisión | Estado |
@@ -359,6 +389,10 @@ El usuario se identifica por su nombre de usuario (`preferred_username`), que co
 | [ADR-004](adr/ADR-004-conciliacion-diaria.md) | La conciliación diaria corre dentro de la API | Aceptada |
 | [ADR-005](adr/ADR-005-proveedor-de-identidad.md) | Autenticación delegada en un proveedor de identidad OIDC (Keycloak) | Aceptada |
 | [ADR-006](adr/ADR-006-validacion-en-gateway.md) | El token se valida en un gateway, que reenvía la identidad a la API | Aceptada |
+| [ADR-007](adr/ADR-007-consistencia-de-la-imputacion.md) | Consistencia de la imputación y código de pago | Aceptada |
+| [ADR-008](adr/ADR-008-minimo-privilegio.md) | Mínimo privilegio: usuario de base propio y contenedores sin root | Aceptada |
+| [ADR-009](adr/ADR-009-tls-y-mfa.md) | TLS y segundo factor: diseñados para producción, desactivados en la demo | Aceptada |
+| [ADR-010](adr/ADR-010-autenticacion-con-el-banco.md) | Autenticación con el banco mediante API key | Aceptada |
 
 ## 11. Verificación de NFRs
 
