@@ -9,10 +9,11 @@ services:
     environment:
       POSTGRES_DB: ${DB_NAME:-expensas}
       POSTGRES_USER: ${DB_USER:-expensas}
-      POSTGRES_PASSWORD: "${DB_PASSWORD:?Falta DB_PASSWORD, copiá .env.example como .env}"   # la contraseña vive en .env, que NO se sube al repo
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?Falta DB_PASSWORD, copiá .env.example como .env}"   # superusuario: solo para inicializar la base
+      API_DB_PASSWORD: "${API_DB_PASSWORD:?Falta API_DB_PASSWORD, copiala de .env.example a tu .env}"   # la usa db/02-usuario-api.sh
     volumes:
       - pgdata:/var/lib/postgresql/data   # volumen con nombre: los datos sobreviven a los contenedores
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro   # bind mount: script que corre la primera vez
+      - ./db:/docker-entrypoint-initdb.d:ro   # bind mount: los scripts de db/ corren en orden la primera vez
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -29,8 +30,8 @@ services:
       DB_HOST: db          # service discovery: el nombre del servicio ES el hostname
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-expensas}
-      DB_USER: ${DB_USER:-expensas}
-      DB_PASSWORD: "${DB_PASSWORD:?Falta DB_PASSWORD, copiá .env.example como .env}"
+      DB_USER: api_expensas                    # usuario propio, con permisos mínimos (ADR-008)
+      DB_PASSWORD: "${API_DB_PASSWORD:?Falta API_DB_PASSWORD, copiala de .env.example a tu .env}"
       BANCO_URL: http://banco-mock:8090/soap   # el banco se alcanza por nombre de servicio
     # Sin puerto publicado: desde afuera solo se llega por el gateway (ADR-006)
     depends_on:
