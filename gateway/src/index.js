@@ -35,7 +35,18 @@ const REGLAS = [
 ];
 
 const app = express();
+app.disable('x-powered-by');   // no anunciar qué framework usamos
 app.use(express.json());
+
+// Headers de seguridad en todas las respuestas (se configuran en un solo lugar: el gateway)
+app.use((req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff');                                   // el navegador no "adivina" el tipo de contenido
+  res.set('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'"); // la API solo devuelve datos: nada que cargar ni embeber
+  res.set('Referrer-Policy', 'no-referrer');
+  res.set('Cache-Control', 'no-store');                                            // los datos de expensas no se guardan en cachés
+  // HSTS (Strict-Transport-Security) solo tiene sentido con HTTPS: se agrega en producción, con TLS (ADR-009)
+  next();
+});
 
 // CORS: Swagger UI (localhost:8080) llama al gateway (localhost:8000) y manda el header Authorization
 app.use((req, res, next) => {

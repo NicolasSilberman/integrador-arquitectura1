@@ -11,4 +11,6 @@ RUN npm ci --omit=dev
 COPY src ./src
 
 EXPOSE 3000
+# Mínimo privilegio (ADR-008): el proceso corre con el usuario sin privilegios "node" de la imagen oficial, no como root
+USER node
 CMD ["node", "src/index.js"]
