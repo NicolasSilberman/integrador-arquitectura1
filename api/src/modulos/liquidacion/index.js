@@ -2,7 +2,7 @@
 // Es el único que lee y escribe las tablas liquidaciones, gastos, expensas y expensa_conceptos.
 import { pool, enTransaccion } from '../../db.js';
 import { Problema } from '../../http/problemas.js';
-import { codigoDePago, dinero } from './dominio.js';
+import { codigoDePago, dinero, expensaIdDesdeCodigo } from './dominio.js';
 
 // El total nunca se guarda: es la suma de los conceptos (ADR-002)
 const SELECT_EXPENSA = `
@@ -59,4 +59,22 @@ export async function asegurarCodigoDePago(id) {
     await db.query('UPDATE expensas SET codigo_pago = $1 WHERE id = $2', [codigo, id]);
     return { codigo, creado: true };
   });
+}
+
+// Imputar un pago (ADR-007). La llama el módulo de Cobranzas DENTRO de su transacción (recibe la conexión `db`):
+// si después algo falla, todo se revierte junto.
+// Bloquea la expensa mientras decide, y solo la marca PAGADA si el monto es EXACTO.
+// Devuelve { imputada: true, expensaId } o { imputada: false, motivo, expensaId }.
+export async function imputarPago(db, { codigoPago, montoCentavos }) {
+  const id = expensaIdDesdeCodigo(codigoPago);
+  if (id === null) return { imputada: false, motivo: 'CODIGO_DESCONOCIDO', expensaId: null };
+
+  const { rows } = await db.query(`${SELECT_EXPENSA} WHERE e.id = $1 FOR UPDATE OF e`, [id]);
+  const fila = rows[0];
+  if (!fila) return { imputada: false, motivo: 'CODIGO_DESCONOCIDO', expensaId: null };
+  if (fila.estado === 'PAGADA') return { imputada: false, motivo: 'PAGO_DUPLICADO', expensaId: id };
+  if (fila.total_centavos !== montoCentavos) return { imputada: false, motivo: 'MONTO_DISTINTO', expensaId: id };
+
+  await db.query(`UPDATE expensas SET estado = 'PAGADA' WHERE id = $1`, [id]);
+  return { imputada: true, expensaId: id };
 }

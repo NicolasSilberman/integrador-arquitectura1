@@ -72,9 +72,20 @@ rutas.put('/expensas/:id/codigo-pago', async (req, res) => {
 });
 
 // ---------- Conciliación (los permisos por rol los aplica el gateway) ----------
-rutas.post('/conciliaciones', () => {
-  // La descarga del listado del banco y la imputación se agregan en el próximo commit (ADR-003 y ADR-007)
-  throw new Problema(501, 'Todavía no implementado', 'La conciliación contra el banco se incorpora en el próximo avance.');
+const FECHA = /^\d{4}-\d{2}-\d{2}$/;
+const hoyEnArgentina = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' });
+
+// Conciliación manual (la automática corre sola cada mañana, ADR-004). 201 con la corrida; 409 si hay otra en curso;
+// 502 si el banco falla (la corrida queda registrada con error).
+rutas.post('/conciliaciones', async (req, res) => {
+  const { fecha } = req.body ?? {};
+  if (typeof fecha !== 'string' || !FECHA.test(fecha) || Number.isNaN(Date.parse(`${fecha}T00:00:00Z`))
+      || new Date(`${fecha}T00:00:00Z`).toISOString().slice(0, 10) !== fecha) {
+    throw new Problema(400, 'Datos inválidos', 'Se requiere "fecha" con el formato AAAA-MM-DD.');
+  }
+  if (fecha > hoyEnArgentina()) throw new Problema(400, 'Datos inválidos', 'No se puede conciliar una fecha futura.');
+  const corrida = await cobranzas.conciliar({ fecha, origen: 'MANUAL' });
+  res.status(201).location(`/v1/conciliaciones/${corrida.id}`).json(cobranzas.aCorrida(corrida));
 });
 
 rutas.get('/conciliaciones/:id', async (req, res) => {

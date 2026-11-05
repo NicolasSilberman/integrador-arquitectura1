@@ -1,7 +1,9 @@
 // Módulo COBRANZAS: corridas de conciliación y cobranzas informadas por el banco.
 // Es el único que lee y escribe las tablas conciliaciones y cobranzas.
-// En esta etapa solo hay consultas; la conciliación contra el banco se agrega en el próximo commit.
+// La conciliación contra el banco está en conciliacion.js; acá están las consultas.
 import { pool } from '../../db.js';
+
+export { conciliar } from './conciliacion.js';
 
 const dinero = (centavos) => ({ centavos, moneda: 'ARS' });
 
@@ -45,3 +47,5 @@ export async function obtenerCorrida(id) {
   const { rows } = await pool.query('SELECT * FROM conciliaciones WHERE id = $1', [id]);
   return rows[0] ? aCorrida(rows[0]) : null;
 }
+
+export { aCorrida };
