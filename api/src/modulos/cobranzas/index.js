@@ -4,6 +4,7 @@
 import { pool } from '../../db.js';
 
 export { conciliar } from './conciliacion.js';
+export { iniciarPlanificador } from './planificador.js';
 
 const dinero = (centavos) => ({ centavos, moneda: 'ARS' });
 
@@ -49,3 +50,36 @@ export async function obtenerCorrida(id) {
 }
 
 export { aCorrida };
+
+// ---------- Consultas del planificador de la conciliación automática ----------
+
+// La fecha más vieja que el sistema intentó conciliar (null si nunca concilió nada)
+export async function primeraFechaConciliada() {
+  const { rows: [r] } = await pool.query('SELECT min(fecha_cobranzas) AS fecha FROM conciliaciones');
+  return r.fecha;
+}
+
+// Las fechas entre desde y hasta que ya tienen una corrida OK
+export async function fechasConciliadasEntre(desde, hasta) {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT fecha_cobranzas AS fecha FROM conciliaciones
+     WHERE estado = 'OK' AND fecha_cobranzas BETWEEN $1 AND $2`, [desde, hasta]);
+  return rows.map((r) => r.fecha);
+}
+
+// Minutos desde el último intento de conciliar esa fecha (null si nunca se intentó). Usa el reloj de la base.
+export async function minutosDesdeUltimoIntento(fecha) {
+  const { rows: [r] } = await pool.query(
+    `SELECT extract(epoch FROM now() - max(coalesce(finalizada_en, iniciada_en))) / 60 AS minutos
+     FROM conciliaciones WHERE fecha_cobranzas = $1`, [fecha]);
+  return r.minutos === null ? null : Number(r.minutos);
+}
+
+// Al arrancar la API: una corrida que quedó EN_CURSO es de un proceso que se cortó a la mitad.
+// Se marca como ERROR para que el planificador la reintente (lo ya imputado no se duplica, ADR-007).
+export async function marcarInterrumpidas() {
+  const { rowCount } = await pool.query(
+    `UPDATE conciliaciones SET estado = 'ERROR', error = 'Interrumpida: el proceso se reinició durante la corrida.', finalizada_en = now()
+     WHERE estado = 'EN_CURSO'`);
+  return rowCount;
+}

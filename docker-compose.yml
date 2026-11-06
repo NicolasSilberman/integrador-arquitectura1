@@ -34,6 +34,11 @@ services:
       DB_PASSWORD: "${API_DB_PASSWORD:?Falta API_DB_PASSWORD, copiala de .env.example a tu .env}"
       BANCO_URL: http://banco-mock:8090/soap   # el banco se alcanza por nombre de servicio
       BANCO_API_KEY: "${BANCO_API_KEY:?Falta BANCO_API_KEY, copiala de .env.example a tu .env}"   # ADR-010
+      # Conciliación automática diaria (ADR-004). Para probarla sin esperar a mañana, poner una hora ya pasada.
+      CONCILIACION_AUTOMATICA: "${CONCILIACION_AUTOMATICA:-true}"
+      CONCILIACION_HORA: "${CONCILIACION_HORA:-07:00}"           # hora de Argentina desde la que corre
+      CONCILIACION_REINTENTO_MIN: "${CONCILIACION_REINTENTO_MIN:-30}"   # espera antes de reintentar si el banco falló
+      CONCILIACION_MAX_DIAS: "${CONCILIACION_MAX_DIAS:-7}"         # cuántos días atrasados se pone al día como máximo
     # Sin puerto publicado: desde afuera solo se llega por el gateway (ADR-006)
     depends_on:
       db:
