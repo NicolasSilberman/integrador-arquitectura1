@@ -14,16 +14,16 @@ Guía de pruebas manuales sobre el sistema levantado con `docker compose`. Cada 
 | 6 | ★1 Consistencia | Varias conciliaciones al mismo tiempo | Nicolás | ✔ |
 | 7 | ★1b Liquidación cuadra | El total de la expensa es la suma de sus conceptos | Nicolás | ✔ |
 | 8 | 3 Recuperación sin guardia | Banco caído en una conciliación manual, y reintento | Nicolás | ✔ |
-| 9 | 3 Recuperación sin guardia | La conciliación automática imputa sola | Fernando | |
-| 10 | 3 Recuperación sin guardia | La conciliación automática reintenta sola si el banco falla | Fernando | |
-| 11 | 3 Recuperación sin guardia | Después de días sin conciliar, se pone al día sola | Fernando | |
-| 12 | 4 Seguridad | Pedido sin token | Fernando | |
-| 13 | 4 Seguridad | Token adulterado | Fernando | |
-| 14 | 4 Seguridad | Un propietario intenta conciliar | Fernando | |
-| 15 | 4 Seguridad | Un propietario pide una expensa ajena | Fernando | |
-| 16 | 4 Seguridad | Un cliente intenta hacerse pasar por otro usuario | Fernando | |
-| 17 | 4 Seguridad | La API no se alcanza directo y su usuario de base no puede borrar | Fernando | |
-| 18 | ★2 Simplicidad · 5 Costo | Cantidad de contenedores y consumo de memoria | Fernando | |
+| 9 | 3 Recuperación sin guardia | La conciliación automática imputa sola | Fernando | ✔ |
+| 10 | 3 Recuperación sin guardia | La conciliación automática reintenta sola si el banco falla | Fernando | ✔ |
+| 11 | 3 Recuperación sin guardia | Después de días sin conciliar, se pone al día sola | Fernando | ✔ |
+| 12 | 4 Seguridad | Pedido sin token | Fernando | ✔ |
+| 13 | 4 Seguridad | Token adulterado | Fernando | ✔ |
+| 14 | 4 Seguridad | Un propietario intenta conciliar | Fernando | ✔ |
+| 15 | 4 Seguridad | Un propietario pide una expensa ajena | Fernando | ✔ |
+| 16 | 4 Seguridad | Un cliente intenta hacerse pasar por otro usuario | Fernando | ✔ |
+| 17 | 4 Seguridad | La API no se alcanza directo y su usuario de base no puede borrar | Fernando | ✔ |
+| 18 | ★2 Simplicidad · 5 Costo | Cantidad de contenedores y consumo de memoria | Fernando | ✔ |
 
 ## Preparación
 
@@ -256,7 +256,7 @@ docker compose up -d api
    $env:CONCILIACION_AUTOMATICA="false"; docker compose up -d --build
    ```
 2. Como paula: `PUT /v1/expensas/1/codigo-pago`.
-3. En la consola del banco: código `00000000018`, importe `50200,01`, **fecha de ayer**.
+3. En la consola del banco: código `00000000018`, importe `50200,01`, **fecha 05/11/2026** (el día anterior).
 4. Encender la automática con una hora ya pasada:
    ```powershell
    $env:CONCILIACION_AUTOMATICA="true"; $env:CONCILIACION_HORA="00:00"; docker compose up -d api
@@ -264,11 +264,19 @@ docker compose up -d api
    ```
 5. Como adriana: `GET /v1/conciliaciones/1`. Como paula: `GET /v1/expensas/1`.
 
-**Resultado esperado:** el log muestra `[conciliación automática] <ayer>: corrida 1 OK (1 imputadas, 0 observadas)`. La corrida tiene `origen: AUTOMATICA` y la expensa queda `PAGADA`.
+**Resultado esperado:** el log muestra `[conciliación automática] 2026-11-05: corrida 1 OK (1 imputadas, 0 observadas)`. La corrida tiene `origen: AUTOMATICA` y la expensa queda `PAGADA`.
 
-**Resultado obtenido:**
+**Resultado obtenido:** El código de la expensa 1 se generó con 201. El log muestra `[conciliación automática] 2026-11-05: corrida 1 OK (1 imputadas, 0 observadas)`. La corrida 1 tiene `fechaCobranzas: 2026-11-05`, `origen: AUTOMATICA`, `imputadas: 1`, y la expensa 1 quedó `PAGADA`.
 
 **Captura:**
+
+![Prueba-9a.png](verificacion/Prueba-9a.png)
+
+![Prueba-9b.png](verificacion/Prueba-9b.png)
+
+![Prueba-9c.png](verificacion/Prueba-9c.png)
+
+![Prueba-9d.png](verificacion/Prueba-9d.png)
 
 ### Prueba 10 · La conciliación automática reintenta sola si el banco falla
 
@@ -285,11 +293,15 @@ docker compose up -d api
 4. En la consola del banco: *Restablecer el servicio*.
 5. Esperar 2 minutos y volver a mirar `docker compose logs api`.
 
-**Resultado esperado:** primero el log muestra el error del banco y `Se reintenta en 1 minutos`. Después de restablecer el banco, sin intervención, aparece `corrida 2 OK (1 imputadas, 0 observadas)`. La corrida 1 queda `ERROR` y la 2 `OK`, ambas con `origen: AUTOMATICA`.
+**Resultado esperado:** primero el log muestra el error del banco y `Se reintenta en 1 minutos`. Después de restablecer el banco, sin intervención, aparece `corrida 2 OK (1 imputadas, 0 observadas)`. La corrida 1 queda `ERROR` y la 2 `OK`, ambas del `2026-11-05` con `origen: AUTOMATICA`.
 
-**Resultado obtenido:**
+**Resultado obtenido:** Con el banco caído, el log muestra el error y `La corrida 1 quedó registrada con error y se puede reintentar. Se reintenta en 1 minutos.` Después de restablecer el banco, sin intervención, aparece `2026-11-05: corrida 2 OK (1 imputadas, 0 observadas)`.
 
 **Captura:**
+
+![Prueba-10a.png](verificacion/Prueba-10a.png)
+
+![Prueba-10b.png](verificacion/Prueba-10b.png)
 
 ### Prueba 11 · Después de días sin conciliar, se pone al día sola
 
@@ -297,14 +309,18 @@ docker compose up -d api
 
 **Pasos:**
 1. Arranque desde cero con la automática apagada (paso 1 de la prueba 9).
-2. Como adriana: `POST /v1/conciliaciones` con la fecha de **hace 4 días** (se obtiene con `(Get-Date).AddDays(-4).ToString('yyyy-MM-dd')`). Simula que la última conciliación fue ese día.
+2. Como adriana: `POST /v1/conciliaciones` con `{"fecha": "2026-11-02"}`. Así la última conciliación del sistema es del 02/11.
 3. Encender la automática con una hora ya pasada (paso 4 de la prueba 9) y mirar `docker compose logs api`.
 
-**Resultado esperado:** la automática concilia los 3 días que faltan, del más viejo a ayer, en ese orden: `corrida 2 OK`, `corrida 3 OK`, `corrida 4 OK`.
+**Resultado esperado:** la automática concilia sola los días que faltan, uno por uno y en orden: `2026-11-03`, `2026-11-04` y `2026-11-05`, todos `OK`.
 
-**Resultado obtenido:**
+**Resultado obtenido:** La conciliación manual del `2026-11-02` respondió 201 (corrida 1). Al encender la automática, concilió sola los días que faltaban, en orden: `2026-11-03: corrida 3 OK`, `2026-11-04: corrida 4 OK`, `2026-11-05: corrida 5 OK`.
 
 **Captura:**
+
+![Prueba-11a.png](verificacion/Prueba-11a.png)
+
+![Prueba-11b.png](verificacion/Prueba-11b.png)
 
 ---
 
@@ -322,9 +338,11 @@ curl.exe -i http://localhost:8000/v1/expensas
 
 **Resultado esperado:** 401, con el detalle del error en formato Problem Details.
 
-**Resultado obtenido:**
+**Resultado obtenido:** 401 *No autenticado*, con `WWW-Authenticate: Bearer realm="expensas"` y el detalle `Falta el header "Authorization: Bearer <token>"`. La respuesta trae los headers de seguridad del gateway (`nosniff`, CSP, `no-referrer`, `no-store`).
 
 **Captura:**
+
+![Prueba-12a.png](verificacion/Prueba-12a.png)
 
 ### Prueba 13 · Token adulterado
 
@@ -340,22 +358,28 @@ curl.exe -i -H "Authorization: Bearer $T" http://localhost:8000/v1/expensas
 
 **Resultado esperado:** con el token adulterado, 401. Con el original, 200.
 
-**Resultado obtenido:**
+**Resultado obtenido:** Con el token adulterado, 401 con `Token inválido (ERR_JWS_SIGNATURE_VERIFICATION_FAILED)`. Con el token original, 200 con las expensas de paula (1 y 51).
 
 **Captura:**
+
+![Prueba-13a.png](verificacion/Prueba-13a.png)
+
+![Prueba-13b.png](verificacion/Prueba-13b.png)
 
 ### Prueba 14 · Un propietario intenta conciliar
 
 **NFR:** 4 Seguridad
 
 **Pasos:**
-1. Como paula: `POST /v1/conciliaciones` con la fecha de hoy.
+1. Como paula: `POST /v1/conciliaciones` con `{"fecha": "2026-11-06"}`.
 
 **Resultado esperado:** 403. El pedido lo frena el gateway y no llega a la API.
 
-**Resultado obtenido:**
+**Resultado obtenido:** 403 *Sin permiso*: `paula tiene los roles [propietario] y esta operación requiere uno de [administrador]`.
 
 **Captura:**
+
+![Prueba-14a.png](verificacion/Prueba-14a.png)
 
 ### Prueba 15 · Un propietario pide una expensa ajena
 
@@ -367,9 +391,15 @@ curl.exe -i -H "Authorization: Bearer $T" http://localhost:8000/v1/expensas
 
 **Resultado esperado:** 403 en los pedidos sobre la expensa 26; 200 en la expensa 1. Esta regla la aplica la API, porque depende de quién es el propietario de cada unidad.
 
-**Resultado obtenido:**
+**Resultado obtenido:** `GET /v1/expensas/26` y `PUT /v1/expensas/26/codigo-pago` respondieron 403 con `La expensa 26 no pertenece a una unidad de paula`. `GET /v1/expensas/1` respondió 200.
 
 **Captura:**
+
+![Prueba-15a.png](verificacion/Prueba-15a.png)
+
+![Prueba-15b.png](verificacion/Prueba-15b.png)
+
+![Prueba-15c.png](verificacion/Prueba-15c.png)
 
 ### Prueba 16 · Un cliente intenta hacerse pasar por otro usuario
 
@@ -383,9 +413,11 @@ curl.exe -i -H "Authorization: Bearer $T" -H "X-Usuario: paula" -H "X-Roles: adm
 
 **Resultado esperado:** 403. El gateway descarta los `X-Usuario` y `X-Roles` que manda el cliente y pone los del token (pablo).
 
-**Resultado obtenido:**
+**Resultado obtenido:** 403 con `La expensa 1 no pertenece a una unidad de pablo`: el gateway ignoró los headers `X-Usuario: paula` y `X-Roles: administrador` y usó la identidad del token.
 
 **Captura:**
+
+![Prueba-16a.png](verificacion/Prueba-16a.png)
 
 ### Prueba 17 · La API no se alcanza directo y su usuario de base no puede borrar
 
@@ -401,9 +433,15 @@ docker compose exec db psql -U api_expensas -d expensas -c "SELECT count(*) FROM
 
 **Resultado esperado:** el primer comando no puede conectarse (la API no publica su puerto). El `DELETE` falla con `permission denied for table cobranzas`. El `SELECT` funciona.
 
-**Resultado obtenido:**
+**Resultado obtenido:** `curl` no pudo conectarse a `localhost:3000` (*Could not connect to server*). El `DELETE` falló con `permission denied for table cobranzas`. El `SELECT` funcionó.
 
 **Captura:**
+
+![Prueba-17a.png](verificacion/Prueba-17a.png)
+
+![Prueba-17b.png](verificacion/Prueba-17b.png)
+
+![Prueba-17c.png](verificacion/Prueba-17c.png)
 
 ### Prueba 18 · Cantidad de contenedores y consumo de memoria
 
@@ -418,6 +456,8 @@ docker stats --no-stream
 
 **Resultado esperado:** 6 contenedores en ejecución (db, api, gateway, keycloak, banco-mock, swagger-ui). Se anota la memoria de cada uno y el total.
 
-**Resultado obtenido:**
+**Resultado obtenido:** 6 contenedores en ejecución: api 25,5 MiB, gateway 22,4 MiB, keycloak 634,4 MiB, db 29,9 MiB, banco-mock 9,6 MiB y swagger-ui 7,9 MiB. Total: unos 730 MiB.
 
 **Captura:**
+
+![Prueba-18a.png](verificacion/Prueba-18a.png)

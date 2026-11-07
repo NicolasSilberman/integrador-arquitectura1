@@ -396,4 +396,14 @@ Autenticar y autorizar es una capa de la seguridad. Las demás se resuelven así
 
 ## 11. Verificación de NFRs
 
-*Pendiente (05/11).*
+Los NFRs se verificaron con 18 pruebas manuales sobre el sistema levantado con `docker compose`. La guía completa, con los pasos, el resultado esperado, el obtenido y las capturas de cada prueba, está en [verificacion.md](verificacion.md).
+
+| NFR | Pruebas | Qué se verificó | Resultado |
+|---|---|---|---|
+| ★ 1 Consistencia | 1 a 6 | Un pago con el monto exacto se imputa; reprocesar el mismo día no duplica nada; un monto distinto, un código inexistente o un segundo pago de la misma expensa quedan observados con su motivo; varias conciliaciones al mismo tiempo no imputan dos veces | ✔ 0 expensas con más de un pago imputado; todas las cobranzas del listado quedaron imputadas u observadas |
+| ★ 1b Consistencia de la liquidación | 7 | El total de la expensa es la suma de sus conceptos, al centavo | ✔ a nivel de expensa |
+| ★ 2 Simplicidad | 18 | El sistema completo se levanta con `docker compose up -d --build` | ✔ 6 contenedores, un solo comando |
+| 3 Recuperación sin guardia | 8 a 11 | Con el banco caído la corrida queda registrada con error y se reintenta; la conciliación automática imputa sola, reintenta sola cuando el banco vuelve y se pone al día con los días atrasados, en orden | ✔ 0 intervenciones manuales en las pruebas 9 a 11 |
+| 4 Seguridad | 12 a 17 | Sin token o con un token adulterado: 401; un propietario no puede conciliar ni ver expensas ajenas: 403; los headers de identidad que manda el cliente se ignoran; la API no se alcanza directo y su usuario de base no puede borrar | ✔ el 100 % de los accesos a expensas ajenas se rechazó |
+| 5 Costo | 18 | Consumo de memoria medido con `docker stats` | ✔ unos 730 MiB en total, dentro de un servidor de 2 GB. Keycloak usa la mayor parte (unos 634 MiB) |
+| 6 Performance | — | — | No se midió en esta etapa |
