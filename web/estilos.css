@@ -1,0 +1,112 @@
+/* Paleta zinc (los mismos valores que la escala de Tailwind), sin dependencias externas */
+:root {
+  --zinc-50: #fafafa; --zinc-100: #f4f4f5; --zinc-200: #e4e4e7; --zinc-300: #d4d4d8; --zinc-400: #a1a1aa;
+  --zinc-500: #71717a; --zinc-600: #52525b; --zinc-700: #3f3f46; --zinc-800: #27272a; --zinc-900: #18181b;
+  --verde: #10b981; --ambar: #f59e0b; --rojo: #ef4444; --rojo-texto: #b91c1c;
+  --ancho: 980px;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--zinc-50); color: var(--zinc-900);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Barra superior: mismo eje que el contenido ---------- */
+.barra { background: #fff; border-bottom: 1px solid var(--zinc-200); }
+.barra-contenido { max-width: var(--ancho); margin: 0 auto; padding: .75rem 1rem; display: flex; align-items: center; gap: .75rem; }
+.marca { font-weight: 600; letter-spacing: -.01em; margin-right: auto; }
+.usuario { color: var(--zinc-500); font-size: 13px; }
+main { max-width: var(--ancho); margin: 2rem auto; padding: 0 1rem; }
+
+h1 { margin: 0 0 .5rem; font-size: 1.6rem; font-weight: 600; letter-spacing: -.025em; }
+h2 { margin: 1rem 0 .5rem; font-size: 1.1rem; font-weight: 600; letter-spacing: -.015em; }
+p { color: var(--zinc-600); }
+
+/* ---------- Botones ---------- */
+button {
+  font: inherit; font-weight: 500; padding: .45rem .9rem; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--zinc-900); background: var(--zinc-900); color: #fff;
+  transition: background-color .15s, border-color .15s, color .15s;
+}
+button:hover { background: var(--zinc-800); border-color: var(--zinc-800); }
+button:focus-visible { outline: 2px solid var(--zinc-400); outline-offset: 2px; }
+button.secundario { background: #fff; color: var(--zinc-700); border-color: var(--zinc-200); }
+button.secundario:hover { background: var(--zinc-100); color: var(--zinc-900); }
+
+/* ---------- Pestañas: control segmentado ---------- */
+.pestanias { display: inline-flex; gap: .25rem; padding: .25rem; margin-bottom: 1.25rem; background: var(--zinc-100); border-radius: 8px; }
+.pestanias button { background: transparent; border: none; color: var(--zinc-500); padding: .35rem .9rem; border-radius: 6px; }
+.pestanias button:hover { background: transparent; color: var(--zinc-900); }
+.pestanias button.activa { background: #fff; color: var(--zinc-900); box-shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 0 0 1px rgba(0, 0, 0, .03); }
+
+/* ---------- Formularios ---------- */
+.filtros { display: flex; align-items: end; gap: .75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+label { display: flex; flex-direction: column; gap: .3rem; font-size: 12px; font-weight: 500; color: var(--zinc-500); }
+select, input {
+  font: inherit; color: var(--zinc-900); padding: .4rem .6rem; background: #fff;
+  border: 1px solid var(--zinc-200); border-radius: 6px;
+}
+select:focus, input:focus { outline: none; border-color: var(--zinc-400); box-shadow: 0 0 0 3px var(--zinc-100); }
+
+/* ---------- Tablas ---------- */
+table { width: 100%; border-collapse: separate; border-spacing: 0; background: #fff; border: 1px solid var(--zinc-200); border-radius: 8px; overflow: hidden; }
+th, td { padding: .6rem .85rem; text-align: left; border-bottom: 1px solid var(--zinc-100); }
+tbody tr:last-child td { border-bottom: none; }
+th { font-size: 12px; font-weight: 500; color: var(--zinc-500); background: var(--zinc-50); border-bottom: 1px solid var(--zinc-200); }
+tfoot th { background: #fff; color: var(--zinc-900); font-weight: 600; font-size: 13px; border-top: 1px solid var(--zinc-200); border-bottom: none; }
+.num { text-align: right; }
+.mono { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+tfoot .mono { font-size: 13px; }
+tr.clic { cursor: pointer; }
+tr.clic:hover td { background: var(--zinc-50); }
+
+/* ---------- Estados: badge técnico con punto de color ---------- */
+.estado {
+  display: inline-flex; align-items: center; gap: .4rem; padding: .1rem .5rem;
+  font-size: 12px; font-weight: 500; color: var(--zinc-700); white-space: nowrap;
+  background: #fff; border: 1px solid var(--zinc-200); border-radius: 6px;
+}
+.estado .punto { width: 6px; height: 6px; border-radius: 50%; background: var(--zinc-400); }
+.estado.ok .punto { background: var(--verde); }
+.estado.pendiente .punto { background: var(--ambar); }
+.estado.error .punto { background: var(--rojo); }
+
+/* ---------- Tarjetas ---------- */
+.tarjeta { margin-top: 1rem; padding: 1rem 1.25rem; background: #fff; border: 1px solid var(--zinc-200); border-radius: 8px; }
+.tarjeta p:first-child { margin-top: 0; }
+.tarjeta.ok { border-left: 4px solid var(--verde); color: var(--zinc-700); }
+.tarjeta.error { border-left: 4px solid var(--rojo); color: var(--rojo-texto); }
+.metricas { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+.metrica { display: flex; flex-direction: column; min-width: 110px; padding: .5rem .75rem; background: var(--zinc-50); border: 1px solid var(--zinc-100); border-radius: 6px; }
+.metrica .valor { font-family: var(--mono); font-size: 1.1rem; font-weight: 600; color: var(--zinc-900); font-variant-numeric: tabular-nums; }
+.metrica .nombre { font-size: 12px; color: var(--zinc-500); }
+
+/* ---------- Bienvenida ---------- */
+.bienvenida { max-width: 520px; margin: 3rem auto; padding: 2rem; background: #fff; border: 1px solid var(--zinc-200); border-radius: 12px; }
+.bienvenida h1 { font-size: 1.5rem; }
+.bienvenida p { margin: 0 0 1.5rem; }
+
+/* ---------- Detalle y código de pago ---------- */
+.datos { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; color: var(--zinc-500); }
+.etiqueta { margin: 1rem 0 0; font-size: 12px; font-weight: 500; color: var(--zinc-500); }
+.codigo { margin: .25rem 0 .75rem; font-family: var(--mono); font-size: 1.5rem; font-weight: 500; letter-spacing: .1em; color: var(--zinc-900); font-variant-numeric: tabular-nums; }
+.nota, .vacio { color: var(--zinc-500); font-size: 13px; }
+.aviso { padding: .7rem 1rem; background: #fff; border: 1px solid var(--zinc-200); border-left: 4px solid var(--rojo); border-radius: 6px; color: var(--rojo-texto); }
+#volver { margin-bottom: .75rem; }
+#codigo { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--zinc-100); }
+#codigo .etiqueta { margin-top: 0; }
+
+/* ---------- Encabezado de la vista: pestañas a la izquierda, filtro a la derecha ---------- */
+.encabezado-vista { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.encabezado-vista .pestanias { margin-bottom: 0; }
+.filtro { display: flex; align-items: center; gap: .5rem; }
+.filtro label { flex-direction: row; }
+/* Una sola pestaña: se ve como título, no como botón */
+.pestanias.unica { padding: 0; background: transparent; }
+.pestanias.unica button, .pestanias.unica button.activa {
+  padding: 0; background: transparent; box-shadow: none; cursor: default;
+  font-size: 1.1rem; font-weight: 600; letter-spacing: -.015em; color: var(--zinc-900);
+}

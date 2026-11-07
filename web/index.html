@@ -3,18 +3,118 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Solo se cargan recursos propios; las llamadas van al gateway (8000) y al proveedor de identidad (8180) -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; connect-src 'self' http://localhost:8000 http://localhost:8180; frame-src http://localhost:8180; img-src 'self' data:; object-src 'none'; base-uri 'self'">
   <title>Expensas</title>
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 0; background: #f5f6f8; color: #1d2733; }
-    main { max-width: 640px; margin: 4rem auto; padding: 0 1rem; }
-    h1 { margin-bottom: .25rem; }
-    p { color: #4a5563; }
-  </style>
+  <link rel="stylesheet" href="estilos.css">
 </head>
 <body>
+  <header class="barra">
+    <div class="barra-contenido">
+      <span class="marca">Expensas</span>
+      <span id="usuario" class="usuario" hidden></span>
+      <button id="salir" class="secundario" hidden>Salir</button>
+    </div>
+  </header>
+
   <main>
-    <h1>Expensas</h1>
-    <p>Interfaz web del sistema de expensas de consorcios (ADR-011). Las pantallas del propietario y del administrador se suman en el próximo commit.</p>
+    <p id="aviso" class="aviso" role="alert" hidden></p>
+
+    <!-- Antes de iniciar sesión -->
+    <section id="bienvenida" class="bienvenida" hidden>
+      <h1>Expensas de consorcios</h1>
+      <p>Consultá tus expensas y obtené el código para pagarlas en el banco. Si sos administrador, conciliá los pagos que informa el banco.</p>
+      <button id="ingresar">Ingresar</button>
+    </section>
+
+    <!-- Después de iniciar sesión -->
+    <section id="aplicacion" hidden>
+      <!-- Pestañas a la izquierda y, en las vistas con tabla, el filtro de estado a la derecha -->
+      <div class="encabezado-vista">
+        <nav class="pestanias">
+          <button data-vista="expensas" class="activa">Expensas</button>
+          <button data-vista="conciliar" data-rol="administrador" hidden>Conciliar</button>
+          <button data-vista="cobranzas" data-rol="administrador" hidden>Cobranzas</button>
+        </nav>
+        <div class="filtro" data-filtro="expensas">
+          <label for="filtro-estado">Estado</label>
+          <select id="filtro-estado">
+            <option value="">Todas</option>
+            <option value="EMITIDA">Emitidas</option>
+            <option value="PAGADA">Pagadas</option>
+          </select>
+        </div>
+        <div class="filtro" data-filtro="cobranzas" hidden>
+          <label for="filtro-cobranzas">Estado</label>
+          <select id="filtro-cobranzas">
+            <option value="OBSERVADA">Observadas</option>
+            <option value="IMPUTADA">Imputadas</option>
+            <option value="">Todas</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Lista de expensas (propietario: las suyas; administrador: todas) -->
+      <div id="vista-expensas" class="vista">
+        <table>
+          <thead>
+            <tr><th>Consorcio</th><th>Unidad</th><th>Período</th><th>Vencimiento</th><th class="num">Total</th><th>Estado</th></tr>
+          </thead>
+          <tbody id="tabla-expensas"></tbody>
+        </table>
+        <p id="sin-expensas" class="vacio" hidden>No hay expensas para mostrar.</p>
+      </div>
+
+      <!-- Detalle de una expensa -->
+      <div id="vista-detalle" class="vista" hidden>
+        <button id="volver" class="secundario">← Volver</button>
+        <h2 id="detalle-titulo"></h2>
+        <p id="detalle-datos" class="datos"></p>
+        <table>
+          <thead><tr><th>Concepto</th><th>Descripción</th><th class="num">Monto</th></tr></thead>
+          <tbody id="tabla-conceptos"></tbody>
+          <tfoot><tr><th colspan="2">Total</th><th id="detalle-total" class="num mono"></th></tr></tfoot>
+        </table>
+
+        <div id="detalle-pagada" class="tarjeta ok" hidden></div>
+
+        <div id="detalle-pago" class="tarjeta" hidden>
+          <p>Para pagar en el banco necesitás el código de pago de esta expensa.</p>
+          <button id="pedir-codigo">Obtener código de pago</button>
+          <div id="codigo" hidden>
+            <p class="etiqueta">Código de pago</p>
+            <p id="codigo-valor" class="codigo"></p>
+            <p>Importe a pagar: <strong id="codigo-importe"></strong> · Vence el <span id="codigo-vencimiento"></span></p>
+            <p class="nota">El pago se registra cuando el administrador concilia lo que informa el banco.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Conciliación (solo administrador) -->
+      <div id="vista-conciliar" class="vista" hidden>
+        <h2>Conciliar las cobranzas de una fecha</h2>
+        <p>Descarga del banco los pagos de esa fecha y los imputa a las expensas. La conciliación automática corre sola cada mañana; acá se puede hacer a mano. Repetirla no duplica nada.</p>
+        <form id="form-conciliar" class="filtros">
+          <label>Fecha de las cobranzas <input type="date" id="fecha-conciliar" required></label>
+          <button type="submit">Conciliar</button>
+        </form>
+        <div id="resultado-corrida" class="tarjeta" hidden></div>
+      </div>
+
+      <!-- Cobranzas (solo administrador) -->
+      <div id="vista-cobranzas" class="vista" hidden>
+        <table>
+          <thead>
+            <tr><th>Operación</th><th>Código de pago</th><th class="num">Monto</th><th>Fecha de pago</th><th>Estado</th><th>Motivo</th><th>Expensa</th></tr>
+          </thead>
+          <tbody id="tabla-cobranzas"></tbody>
+        </table>
+        <p id="sin-cobranzas" class="vacio" hidden>No hay cobranzas para mostrar.</p>
+      </div>
+    </section>
   </main>
+
+  <script type="module" src="app.js"></script>
 </body>
 </html>
