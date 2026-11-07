@@ -75,6 +75,33 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "web-expensas",
+      "name": "Interfaz web (cliente público)",
+      "description": "Páginas estáticas que corren en el navegador (ADR-011): no pueden guardar un secreto. Usa Authorization Code + PKCE.",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [ "http://localhost:3001/*" ],
+      "webOrigins": [ "http://localhost:3001" ],
+      "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "http://localhost:3001/*" },
+      "protocolMappers": [
+        {
+          "name": "audiencia-api-expensas",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "api-expensas",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
     }
   ]
 }

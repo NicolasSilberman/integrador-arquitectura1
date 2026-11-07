@@ -56,7 +56,7 @@ services:
       JWKS_URL: http://keycloak:8080/realms/expensas/protocol/openid-connect/certs   # por la red identidad
       ISSUER: http://localhost:8180/realms/expensas   # el "iss" que pone Keycloak cuando el navegador entra por localhost:8180
       AUDIENCE: api-expensas
-      CORS_ORIGIN: http://localhost:8080
+      CORS_ORIGIN: http://localhost:8080,http://localhost:3001   # Swagger UI y la interfaz web
     ports:
       - "8000:8000"
     depends_on:
@@ -113,6 +113,15 @@ services:
       - ./openapi.yaml:/spec/openapi.yaml:ro   # bind mount: editás el contrato y recargás, sin rebuild
     ports:
       - "8080:8080"
+
+  # Interfaz web (ADR-011): páginas estáticas (HTML + JS) que corren en el navegador.
+  # Como Swagger UI, no necesita ninguna red interna: quien llama al gateway y a Keycloak es el navegador.
+  web:
+    image: nginxinc/nginx-unprivileged:1.27-alpine   # nginx sin root (ADR-008); escucha en el 8080
+    volumes:
+      - ./web:/usr/share/nginx/html:ro   # bind mount: se edita la página y se recarga, sin rebuild
+    ports:
+      - "3001:8080"
 
 volumes:
   pgdata:

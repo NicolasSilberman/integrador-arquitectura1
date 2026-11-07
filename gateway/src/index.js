@@ -14,7 +14,9 @@ const JWKS_URL = process.env.JWKS_URL ?? 'http://localhost:8180/realms/expensas/
 // ...pero el emisor (iss) del token es la URL que vio el NAVEGADOR al loguearse.
 const ISSUER = process.env.ISSUER ?? 'http://localhost:8180/realms/expensas';
 const AUDIENCE = process.env.AUDIENCE ?? 'api-expensas';
-const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:8080';
+// Orígenes del navegador que pueden llamar al gateway, separados por coma: Swagger UI y la interfaz web
+const CORS_ORIGENES = (process.env.CORS_ORIGIN ?? 'http://localhost:8080,http://localhost:3001')
+  .split(',').map((o) => o.trim()).filter(Boolean);
 
 // Se descarga la primera vez que se valida un token y queda en caché.
 // Por eso el gateway puede arrancar antes de que Keycloak esté listo.
@@ -48,9 +50,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// CORS: Swagger UI (localhost:8080) llama al gateway (localhost:8000) y manda el header Authorization
+// CORS: Swagger UI (localhost:8080) y la interfaz web (localhost:3001) llaman al gateway (localhost:8000)
+// con el header Authorization. Se responde con el origen del pedido solo si está en la lista.
 app.use((req, res, next) => {
-  res.set('Access-Control-Allow-Origin', CORS_ORIGIN);
+  const origen = req.headers.origin;
+  if (origen && CORS_ORIGENES.includes(origen)) res.set('Access-Control-Allow-Origin', origen);
+  res.set('Vary', 'Origin');
   res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.set('Access-Control-Expose-Headers', 'Location, WWW-Authenticate');
