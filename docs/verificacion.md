@@ -1,19 +1,19 @@
 # Verificación manual de los NFRs
 
-Guía de pruebas manuales sobre el sistema levantado con `docker compose`. Cada prueba indica qué NFR verifica, los pasos, el resultado esperado y el obtenido. Las capturas están en [`verificacion/`](verificacion/), con el número de la prueba al principio del nombre (por ejemplo `01-pago-exacto.png`).
+Guía de pruebas manuales sobre el sistema levantado con `docker compose`. Cada prueba indica qué NFR verifica, los pasos, el resultado esperado y el obtenido. Las capturas están en [`verificacion/`](verificacion/), con el número de la prueba al principio del nombre (por ejemplo `Prueba-1a.png`).
 
 ## Resumen
 
 | # | NFR | Prueba | Responsable | Resultado |
 |---|---|---|---|---|
-| 1 | ★1 Consistencia | Pago con el monto exacto: la expensa queda pagada | Nicolás | |
-| 2 | ★1 Consistencia | Reprocesar el mismo día no duplica nada | Nicolás | |
-| 3 | ★1 Consistencia | Monto distinto: la cobranza queda observada | Nicolás | |
-| 4 | ★1 Consistencia | Código inexistente: la cobranza queda observada | Nicolás | |
-| 5 | ★1 Consistencia | Dos pagos de la misma expensa: el segundo queda observado | Nicolás | |
-| 6 | ★1 Consistencia | Varias conciliaciones al mismo tiempo | Nicolás | |
-| 7 | ★1b Liquidación cuadra | El total de la expensa es la suma de sus conceptos | Nicolás | |
-| 8 | 3 Recuperación sin guardia | Banco caído en una conciliación manual, y reintento | Nicolás | |
+| 1 | ★1 Consistencia | Pago con el monto exacto: la expensa queda pagada | Nicolás | ✔ |
+| 2 | ★1 Consistencia | Reprocesar el mismo día no duplica nada | Nicolás | ✔ |
+| 3 | ★1 Consistencia | Monto distinto: la cobranza queda observada | Nicolás | ✔ |
+| 4 | ★1 Consistencia | Código inexistente: la cobranza queda observada | Nicolás | ✔ |
+| 5 | ★1 Consistencia | Dos pagos de la misma expensa: el segundo queda observado | Nicolás | ✔ |
+| 6 | ★1 Consistencia | Varias conciliaciones al mismo tiempo | Nicolás | ✔ |
+| 7 | ★1b Liquidación cuadra | El total de la expensa es la suma de sus conceptos | Nicolás | ✔ |
+| 8 | 3 Recuperación sin guardia | Banco caído en una conciliación manual, y reintento | Nicolás | ✔ |
 | 9 | 3 Recuperación sin guardia | La conciliación automática imputa sola | Fernando | |
 | 10 | 3 Recuperación sin guardia | La conciliación automática reintenta sola si el banco falla | Fernando | |
 | 11 | 3 Recuperación sin guardia | Después de días sin conciliar, se pone al día sola | Fernando | |
@@ -39,11 +39,11 @@ Guía de pruebas manuales sobre el sistema levantado con `docker compose`. Cada 
 
 | Expensa | Propietario | Código de pago | Total |
 |---|---|---|---|
-| 1 (consorcio 1, 2B) | paula | `00000000018` | $50.020,01 (`5020001` centavos) |
-| 51 (consorcio 3, 1A) | paula | `00000000513` | según `GET /v1/expensas/51` |
+| 1 (consorcio 1, 2B) | paula | `00000000018` | $50.200,01 (`5020001` centavos) |
+| 51 (consorcio 3, 1A) | paula | `00000000513` | $52.600,03 (`5260003` centavos) |
 | 26 (consorcio 2, 4C) | pablo | `00000000265` | — |
 
-**Importes:** la API informa los montos en centavos; la consola del banco los pide en pesos con coma (`5020001` centavos → `50020,01`).
+**Importes:** la API informa los montos en centavos; la consola del banco los pide en pesos con coma (`5020001` centavos → `50200,01`).
 
 **Token para `curl.exe`:** en Swagger, después de *Authorize* y de ejecutar cualquier pedido, el comando *Curl* que muestra Swagger trae `Authorization: Bearer <token>`. Se copia el token en una variable de PowerShell (dura 5 minutos):
 
@@ -62,7 +62,12 @@ docker compose up -d --build
 
 ## Pruebas 1 a 8 · Consistencia, liquidación y banco caído
 
-Se hacen en orden y sobre el mismo arranque desde cero. Las conciliaciones manuales usan la **fecha de hoy**, para no mezclarse con la conciliación automática, que concilia hasta ayer.
+Se hacen en orden y sobre el mismo arranque desde cero, con la conciliación automática apagada para que no registre corridas propias mientras tanto. Los pagos y las conciliaciones son del **6/11/2026** (`2026-11-06`).
+
+```powershell
+docker compose down -v
+$env:CONCILIACION_AUTOMATICA="false"; docker compose up -d --build
+```
 
 ### Prueba 1 · Pago con el monto exacto
 
@@ -71,29 +76,37 @@ Se hacen en orden y sobre el mismo arranque desde cero. Las conciliaciones manua
 **Pasos:**
 1. Arranque desde cero.
 2. Como paula: `PUT /v1/expensas/1/codigo-pago`.
-3. En la consola del banco: código `00000000018`, importe `50020,01`, fecha de hoy.
-4. Como adriana: `POST /v1/conciliaciones` con `{"fecha": "<hoy>"}`.
+3. En la consola del banco: código `00000000018`, importe `50200,01`, fecha 06/11/2026.
+4. Como adriana: `POST /v1/conciliaciones` con `{"fecha": "2026-11-06"}`.
 5. Como paula: `GET /v1/expensas/1`.
 
 **Resultado esperado:** el paso 2 responde 201 con el código `00000000018` (repetirlo responde 200 con el mismo código). La conciliación responde 201 con `leidas: 1`, `imputadas: 1`. La expensa queda `PAGADA` y `pagoImputado` muestra la operación del banco.
 
-**Resultado obtenido:**
+**Resultado obtenido:** 201 con el código `00000000018` e importe `5020001` centavos. La conciliación (corrida 1) respondió 201 con `leidas: 1`, `imputadas: 1`. La expensa 1 quedó `PAGADA`, con `pagoImputado` OP-0001 por `5020001` centavos.
 
 **Captura:**
+
+![Prueba-1a.png](verificacion/Prueba-1a.png)
+
+![Prueba-1b.png](verificacion/Prueba-1b.png)
+
+![Prueba-1c.png](verificacion/Prueba-1c.png)
 
 ### Prueba 2 · Reprocesar el mismo día
 
 **NFR:** ★1 Consistencia
 
 **Pasos:**
-1. Como adriana: repetir `POST /v1/conciliaciones` con la misma fecha.
+1. Como adriana: repetir `POST /v1/conciliaciones` con la misma fecha (`2026-11-06`).
 2. Como adriana: `GET /v1/cobranzas`.
 
 **Resultado esperado:** 201 con `leidas: 1`, `imputadas: 0`, `yaProcesadas: 1`. En `/v1/cobranzas` sigue habiendo una sola cobranza imputada.
 
-**Resultado obtenido:**
+**Resultado obtenido:** Corrida 2: 201 con `leidas: 1`, `imputadas: 0`, `yaProcesadas: 1`. Sigue habiendo una sola cobranza imputada.
 
 **Captura:**
+
+![Prueba-2.png](verificacion/Prueba-2.png)
 
 ### Prueba 3 · Monto distinto
 
@@ -101,46 +114,62 @@ Se hacen en orden y sobre el mismo arranque desde cero. Las conciliaciones manua
 
 **Pasos:**
 1. Como paula: `PUT /v1/expensas/51/codigo-pago`.
-2. En la consola del banco: código `00000000513`, importe `1000,00`, fecha de hoy.
-3. Como adriana: `POST /v1/conciliaciones` con la fecha de hoy.
+2. En la consola del banco: código `00000000513`, importe `1000,00`, fecha 06/11/2026.
+3. Como adriana: `POST /v1/conciliaciones` con la fecha `2026-11-06`.
 4. Como adriana: `GET /v1/cobranzas?estado=OBSERVADA`.
 5. Como paula: `GET /v1/expensas/51`.
 
 **Resultado esperado:** la corrida da `observadas: 1`, `yaProcesadas: 1`. La cobranza queda `OBSERVADA` con motivo `MONTO_DISTINTO`. La expensa 51 sigue `EMITIDA`.
 
-**Resultado obtenido:**
+**Resultado obtenido:** El código de la expensa 51 es `00000000513` y su total `5260003` centavos. Corrida 3: `leidas: 2`, `observadas: 1`, `yaProcesadas: 1`. La cobranza OP-0002 (`100000` centavos) quedó `OBSERVADA` con motivo `MONTO_DISTINTO`. La expensa 51 sigue `EMITIDA`.
 
 **Captura:**
+
+![Prueba-3a.png](verificacion/Prueba-3a.png)
+
+![Prueba-3b.png](verificacion/Prueba-3b.png)
+
+![Prueba-3c.png](verificacion/Prueba-3c.png)
+
+![Prueba-3d.png](verificacion/Prueba-3d.png)
 
 ### Prueba 4 · Código inexistente
 
 **NFR:** ★1 Consistencia
 
 **Pasos:**
-1. En la consola del banco: código `00000000017` (el de la expensa 1 con el último dígito cambiado), importe `50020,01`, fecha de hoy.
-2. Como adriana: `POST /v1/conciliaciones` con la fecha de hoy.
+1. En la consola del banco: código `00000000017` (el de la expensa 1 con el último dígito cambiado), importe `50200,01`, fecha 06/11/2026.
+2. Como adriana: `POST /v1/conciliaciones` con la fecha `2026-11-06`.
 3. Como adriana: `GET /v1/cobranzas?estado=OBSERVADA`.
 
 **Resultado esperado:** la corrida da `observadas: 1`, `yaProcesadas: 2`. La nueva cobranza queda `OBSERVADA` con motivo `CODIGO_DESCONOCIDO` y sin expensa asociada.
 
-**Resultado obtenido:**
+**Resultado obtenido:** La cobranza OP-0003 (código `00000000017`) quedó `OBSERVADA` con motivo `CODIGO_DESCONOCIDO` y `expensaId: null`.
 
 **Captura:**
+
+![Prueba-4a.png](verificacion/Prueba-4a.png)
+
+![Prueba-4b.png](verificacion/Prueba-4b.png)
 
 ### Prueba 5 · Dos pagos de la misma expensa
 
 **NFR:** ★1 Consistencia
 
 **Pasos:**
-1. En la consola del banco: otra vez código `00000000018`, importe `50020,01`, fecha de hoy.
-2. Como adriana: `POST /v1/conciliaciones` con la fecha de hoy.
+1. En la consola del banco: otra vez código `00000000018`, importe `50200,01`, fecha 06/11/2026.
+2. Como adriana: `POST /v1/conciliaciones` con la fecha `2026-11-06`.
 3. Como adriana: `GET /v1/cobranzas`.
 
 **Resultado esperado:** la corrida da `observadas: 1`, `yaProcesadas: 3`. La segunda cobranza queda `OBSERVADA` con motivo `PAGO_DUPLICADO`. La expensa 1 sigue con un solo pago imputado.
 
-**Resultado obtenido:**
+**Resultado obtenido:** La cobranza OP-0004 (código `00000000018`) quedó `OBSERVADA` con motivo `PAGO_DUPLICADO`. La expensa 1 sigue con un solo pago imputado (OP-0001). El pago se cargó con `50020,01`; el motivo es el mismo con el importe exacto, porque una expensa ya pagada se rechaza antes de comparar el monto.
 
 **Captura:**
+
+![Prueba-5a.png](verificacion/Prueba-5a.png)
+
+![Prueba-5b.png](verificacion/Prueba-5b.png)
 
 ### Prueba 6 · Varias conciliaciones al mismo tiempo
 
@@ -150,7 +179,7 @@ Se hacen en orden y sobre el mismo arranque desde cero. Las conciliaciones manua
 1. Con el token de adriana en `$T`, desde la carpeta del repo:
 
 ```powershell
-'{"fecha":"<hoy>"}' | Out-File -Encoding ascii fecha.json
+'{"fecha":"2026-11-06"}' | Out-File -Encoding ascii fecha.json
 curl.exe -s --parallel --parallel-immediate -w "  -> HTTP %{http_code}`n" -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" -d "@fecha.json" http://localhost:8000/v1/conciliaciones http://localhost:8000/v1/conciliaciones http://localhost:8000/v1/conciliaciones http://localhost:8000/v1/conciliaciones http://localhost:8000/v1/conciliaciones
 Remove-Item fecha.json
 ```
@@ -159,9 +188,11 @@ Remove-Item fecha.json
 
 **Resultado esperado:** los pedidos que coinciden con otra conciliación en curso reciben 409 (*Conciliación en curso*). Los que corren reciben 201 con `imputadas: 0`. En `/v1/cobranzas` no aparece ninguna cobranza nueva y la expensa 1 sigue con un solo pago imputado.
 
-**Resultado obtenido:**
+**Resultado obtenido:** 4 pedidos recibieron 409 (*Conciliación en curso*) y 1 recibió 201: corrida 6 con `leidas: 4`, `imputadas: 0`, `yaProcesadas: 4`. Sigue habiendo una sola cobranza imputada.
 
 **Captura:**
+
+![Prueba-6a.png](verificacion/Prueba-6a.png)
 
 ### Prueba 7 · El total es la suma de los conceptos
 
@@ -172,9 +203,11 @@ Remove-Item fecha.json
 
 **Resultado esperado:** `total.centavos` es igual a la suma de los `monto.centavos` de `conceptos` (4.520.001 + 500.000 = 5.020.001).
 
-**Resultado obtenido:**
+**Resultado obtenido:** `total.centavos` = 5.020.001 = 4.520.001 (ordinaria) + 500.000 (fondo de reserva).
 
 **Captura:**
+
+![Prueba-7.png](verificacion/Prueba-7.png)
 
 ### Prueba 8 · Banco caído en una conciliación manual, y reintento
 
@@ -182,16 +215,24 @@ Remove-Item fecha.json
 
 **Pasos:**
 1. En la consola del banco: *Simular caída*.
-2. Como adriana: `POST /v1/conciliaciones` con la fecha de hoy.
+2. Como adriana: `POST /v1/conciliaciones` con la fecha `2026-11-06`.
 3. Como adriana: `GET /v1/conciliaciones/{id}` con el id que figura en el mensaje de error.
 4. En la consola del banco: *Restablecer el servicio*.
-5. Como adriana: repetir `POST /v1/conciliaciones` con la fecha de hoy.
+5. Como adriana: repetir `POST /v1/conciliaciones` con la fecha `2026-11-06`.
 
 **Resultado esperado:** el paso 2 responde 502 *Banco no disponible*, indicando que la corrida quedó registrada con error. En el paso 3 la corrida figura `ERROR` con el motivo. El reintento responde 201 `OK`, sin imputaciones nuevas.
 
-**Resultado obtenido:**
+**Resultado obtenido:** El POST respondió 502 *Banco no disponible*: "La corrida 10 quedó registrada con error y se puede reintentar". La corrida 10 (`2026-11-06`) figura `ERROR` con el motivo del banco. Con el banco restablecido, el reintento (corrida 11) respondió 201 `OK` con `leidas: 4`, `imputadas: 0`, `yaProcesadas: 4`. Las corridas 7 y 8 son de un primer intento cargado por error con la fecha `2026-06-11`; no afectan a ninguna expensa.
 
 **Captura:**
+
+![Prueba-8a.png](verificacion/Prueba-8a.png)
+
+![Prueba-8b.png](verificacion/Prueba-8b.png)
+
+![Prueba-8c.png](verificacion/Prueba-8c.png)
+
+![Prueba-8d.png](verificacion/Prueba-8d.png)
 
 ---
 
@@ -215,7 +256,7 @@ docker compose up -d api
    $env:CONCILIACION_AUTOMATICA="false"; docker compose up -d --build
    ```
 2. Como paula: `PUT /v1/expensas/1/codigo-pago`.
-3. En la consola del banco: código `00000000018`, importe `50020,01`, **fecha de ayer**.
+3. En la consola del banco: código `00000000018`, importe `50200,01`, **fecha de ayer**.
 4. Encender la automática con una hora ya pasada:
    ```powershell
    $env:CONCILIACION_AUTOMATICA="true"; $env:CONCILIACION_HORA="00:00"; docker compose up -d api
