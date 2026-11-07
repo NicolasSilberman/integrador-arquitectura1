@@ -193,9 +193,9 @@ Se comparan tres alternativas contra un baseline, que por definición puntúa 0 
 | Gateway | Node.js + Express | Única puerta de entrada a la API: valida el token, aplica los permisos por rol y reenvía la identidad del usuario a la API | En el compose desde el 29/10 |
 | API de expensas | Node.js + Express | Monolito modular con los módulos Padrón, Liquidación y Cobranzas, la capa anticorrupción del banco y la conciliación diaria programada. Aplica la regla fina (cada propietario, lo suyo). Sin puerto publicado desde el 29/10 | En el compose desde el 22/10 |
 | Base de datos | PostgreSQL 16 | Datos de los tres módulos, en tablas separadas por módulo. Sin puerto publicado, con volumen con nombre y healthcheck | En el compose desde el 22/10 |
-| Swagger UI | swagger-ui | Muestra el contrato OpenAPI y sirve como cliente de prueba del corte, con login OIDC | En el compose desde el 22/10 |
+| Swagger UI | swagger-ui | Muestra el contrato OpenAPI y sirve como cliente de prueba de la API, con login OIDC | En el compose desde el 22/10 |
 | Proveedor de identidad | Keycloak | Login y roles (propietario, administrador), con el realm versionado en el repo | En el compose desde el 29/10 |
-| Aplicación web | SPA en el navegador | Interfaz para propietarios y administrador | Diseñada, fuera del corte |
+| Interfaz web | HTML + JavaScript (con la librería `keycloak-js`), servido por nginx sin root | Pantallas para el propietario (sus expensas y el código de pago) y para el administrador (todas las expensas, conciliar y revisar las cobranzas). Es un cliente público de la API, como Swagger UI: llama al gateway con el token del usuario (ADR-011) | En el compose desde el 07/11 |
 
 **Memoria de cada contenedor** (medida con `docker stats` el 29/10, con el sistema en reposo, en Docker Desktop sobre Windows):
 
@@ -218,6 +218,7 @@ El proveedor de identidad es el 88 % de la memoria del sistema: es el costo más
 - **Sin BFF:** el esqueleto de la Clase 10 traía un BFF para una app mobile. Se elimina porque hay un solo tipo de cliente y el equipo es chico, que son justamente los casos en que un BFF no conviene.
 - **La conciliación corre dentro de la API**, como una tarea programada, en lugar de un contenedor aparte (ADR-004).
 - **El token se valida en un gateway** delante de la API (ADR-006). La API no publica su puerto: desde afuera solo se llega a ella a través del gateway.
+- **La interfaz web es un contenedor propio con páginas estáticas, sin build** (ADR-011). No tiene acceso a la red interna: usa la API a través del gateway, igual que cualquier otro cliente.
 
 ---
 
@@ -340,8 +341,8 @@ La **autorización**, en cambio, es en parte propia del dominio: el proveedor sa
 
 | Cliente | Tipo | Flujo |
 |---|---|---|
-| Swagger UI (cliente del corte) | Público: corre en el navegador y no puede guardar un secreto | Authorization Code con PKCE, con redirect URI exacto |
-| Aplicación web (diseñada, fuera del corte) | Público | Authorization Code con PKCE |
+| Swagger UI (`swagger-ui`), para documentar y probar la API | Público: corre en el navegador y no puede guardar un secreto | Authorization Code con PKCE, con redirect URI exacto |
+| Interfaz web (`web-expensas`) | Público | Authorization Code con PKCE mediante la librería oficial `keycloak-js`, con redirect URI acotado a `localhost:3001`. El token se renueva antes de cada llamada mientras dure la sesión |
 
 El token de acceso dura **5 minutos** y está emitido para la audiencia `api-expensas`: un token emitido para otra aplicación no sirve en esta.
 
@@ -376,7 +377,7 @@ Autenticar y autorizar es una capa de la seguridad. Las demás se resuelven así
 | Red y transporte | En producción, **TLS termina en el gateway**, con redirección a HTTPS y HSTS. En la demo no hay TLS porque todo corre en `localhost` | ADR-009 |
 | Cuentas | En producción, **segundo factor (TOTP) obligatorio para el administrador**, que es quien concilia el dinero. En la demo está desactivado | ADR-009 |
 | Integración con el banco | La API se autentica ante el banco con una **API key**, que vive en el `.env` | ADR-010 |
-| Aplicación web | El gateway agrega headers de seguridad, el CORS solo admite el origen propio y los errores no exponen detalles internos | — |
+| Aplicación web | El gateway agrega headers de seguridad, el CORS solo admite los orígenes propios (Swagger UI y la interfaz web) y los errores no exponen detalles internos. La interfaz tiene una política de seguridad de contenido (CSP) que solo permite sus propios archivos y las llamadas al gateway y al proveedor de identidad, y muestra los datos siempre como texto, nunca como HTML | ADR-006, ADR-011 |
 | Secretos | Las contraseñas reales van en el `.env`, fuera del repositorio. Las de los usuarios de prueba están en el realm versionado porque son de demostración; en producción vendrían de un gestor de secretos | — |
 
 ## 10. Decisiones de arquitectura (ADRs)
@@ -393,6 +394,7 @@ Autenticar y autorizar es una capa de la seguridad. Las demás se resuelven así
 | [ADR-008](adr/ADR-008-minimo-privilegio.md) | Mínimo privilegio: usuario de base propio y contenedores sin root | Aceptada |
 | [ADR-009](adr/ADR-009-tls-y-mfa.md) | TLS y segundo factor: diseñados para producción, desactivados en la demo | Aceptada |
 | [ADR-010](adr/ADR-010-autenticacion-con-el-banco.md) | Autenticación con el banco mediante API key | Aceptada |
+| [ADR-011](adr/ADR-011-interfaz-web.md) | Interfaz web estática, en su propio contenedor | Aceptada |
 
 ## 11. Verificación de NFRs
 

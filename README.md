@@ -11,7 +11,7 @@ Dominio 5 · Expensas de consorcios · Escenario **5A — Administrador independ
 ## Documentación
 
 - [Documento de arquitectura](docs/arquitectura.md): problema y escenario, dominio, NFRs, matriz de Pugh y estilo, C4 de Contexto y de Contenedores, modelo de dominio, API, seguridad y verificación de los NFRs.
-- [Decisiones de arquitectura (ADRs)](docs/adr/): ADR-001 a ADR-010.
+- [Decisiones de arquitectura (ADRs)](docs/adr/): ADR-001 a ADR-011.
 - [Contrato de la API (OpenAPI)](openapi.yaml)
 - [Verificación manual de los NFRs](docs/verificacion.md): 18 pruebas con sus resultados y capturas.
 
@@ -47,10 +47,13 @@ docker compose up -d --build
 
 Si no se hace, la API puede responder 500 porque su usuario de base todavía no existe (en el log: `password authentication failed`). `down -v` también vacía los pagos cargados en el banco simulado.
 
+Keycloak, en cambio, importa el realm (`keycloak/realm-expensas.json`) cuando se crea su contenedor. Si cambia el realm, alcanza con recrearlo: `docker compose up -d --force-recreate keycloak` (`down -v` también lo recrea).
+
 ## Servicios
 
 | Servicio | URL | Qué es |
 |---|---|---|
+| Interfaz web | http://localhost:3001 | Pantallas para el propietario y el administrador, con login |
 | Swagger UI | http://localhost:8080 | Documentación del contrato y cliente de prueba, con login |
 | Gateway | http://localhost:8000 | Única puerta de entrada a la API: valida el token y aplica los permisos por rol |
 | Keycloak | http://localhost:8180 | Proveedor de identidad. Consola: usuario `admin` y la contraseña de `KEYCLOAK_ADMIN_PASSWORD` |
@@ -82,12 +85,14 @@ El token dura 5 minutos: si un pedido devuelve 401, hay que volver a hacer **Aut
 
 ## Recorrido de la demo: de la expensa al pago conciliado
 
-1. **Pedir el código de pago.** Como `paula`: `PUT /v1/expensas/1/codigo-pago`. Responde 201 con el código (`00000000018`) y el importe en centavos (`5020001`). Repetirlo devuelve el mismo código con 200.
-2. **Pagar en el banco.** En la consola del banco (http://localhost:8090), registrar un pago con ese código, el importe **en pesos** (`50200,01`, o sea los centavos divididos por 100) y la fecha del pago.
-3. **Conciliar.** Como `adriana`: `POST /v1/conciliaciones` con `{"fecha": "AAAA-MM-DD"}`, la fecha del pago. Responde 201 con la corrida: cuántas cobranzas leyó, imputó u observó.
-4. **Ver la expensa pagada.** Como `paula`: `GET /v1/expensas/1` muestra `"estado": "PAGADA"` y el pago imputado.
+Se hace desde la interfaz web (http://localhost:3001, botón **Ingresar**). Entre paréntesis, el endpoint equivalente para hacerlo desde Swagger UI.
 
-Si el importe no es exacto, o el código no existe, o la expensa ya estaba pagada, la cobranza queda **observada** con su motivo (`GET /v1/cobranzas`, como `adriana`). Conciliar de nuevo la misma fecha no duplica nada. Con **Simular caída** en la consola del banco, la conciliación responde 502 y la corrida queda registrada con error para reintentarla.
+1. **Pedir el código de pago.** Como `paula`: entrar a la expensa de la unidad 2B y tocar **Obtener código de pago** (`PUT /v1/expensas/1/codigo-pago`). Muestra el código (`00000000018`) y el importe ($ 50.200,01). Pedirlo de nuevo devuelve el mismo código.
+2. **Pagar en el banco.** En la consola del banco (http://localhost:8090), registrar un pago con ese código, el importe **en pesos** (`50200,01`) y la fecha del pago.
+3. **Conciliar.** **Salir** y entrar como `adriana`: en la pestaña **Conciliar**, elegir la fecha del pago (`POST /v1/conciliaciones` con `{"fecha": "AAAA-MM-DD"}`). Muestra la corrida: cuántas cobranzas leyó, imputó u observó.
+4. **Ver la expensa pagada.** Como `paula`, la expensa aparece **Pagada**, con la fecha y la operación del banco (`GET /v1/expensas/1`).
+
+Si el importe no es exacto, o el código no existe, o la expensa ya estaba pagada, la cobranza queda **observada** con su motivo (pestaña **Cobranzas** del administrador, o `GET /v1/cobranzas`). Conciliar de nuevo la misma fecha no duplica nada. Con **Simular caída** en la consola del banco, la conciliación responde 502 y la corrida queda registrada con error para reintentarla.
 
 ### Conciliación automática
 
