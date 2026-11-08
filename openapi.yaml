@@ -46,6 +46,8 @@ paths:
                   status:
                     type: string
                     example: ok
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
 
   /v1/expensas:
     get:
@@ -72,7 +74,7 @@ paths:
         '403':
           $ref: '#/components/responses/SinPermiso'
         '503':
-          $ref: '#/components/responses/IdentidadNoDisponible'
+          $ref: '#/components/responses/ServicioNoDisponible'
         '200':
           description: Lista de expensas
           content:
@@ -98,7 +100,7 @@ paths:
         '403':
           $ref: '#/components/responses/SinPermiso'
         '503':
-          $ref: '#/components/responses/IdentidadNoDisponible'
+          $ref: '#/components/responses/ServicioNoDisponible'
         '200':
           description: La expensa
           content:
@@ -128,7 +130,7 @@ paths:
         '403':
           $ref: '#/components/responses/SinPermiso'
         '503':
-          $ref: '#/components/responses/IdentidadNoDisponible'
+          $ref: '#/components/responses/ServicioNoDisponible'
         '200':
           description: La expensa ya tenía código; se devuelve el mismo
           content:
@@ -188,7 +190,7 @@ paths:
         '403':
           $ref: '#/components/responses/SinPermiso'
         '503':
-          $ref: '#/components/responses/IdentidadNoDisponible'
+          $ref: '#/components/responses/ServicioNoDisponible'
         '201':
           description: Conciliación ejecutada
           headers:
@@ -240,7 +242,7 @@ paths:
         '403':
           $ref: '#/components/responses/SinPermiso'
         '503':
-          $ref: '#/components/responses/IdentidadNoDisponible'
+          $ref: '#/components/responses/ServicioNoDisponible'
         '200':
           description: La corrida
           content:
@@ -269,7 +271,7 @@ paths:
         '403':
           $ref: '#/components/responses/SinPermiso'
         '503':
-          $ref: '#/components/responses/IdentidadNoDisponible'
+          $ref: '#/components/responses/ServicioNoDisponible'
         '200':
           description: Lista de cobranzas
           content:
@@ -517,8 +519,10 @@ components:
             status: 403
             detail: paula tiene los roles [propietario] y esta operación requiere uno de [administrador].
             instance: /v1/conciliaciones
-    IdentidadNoDisponible:
-      description: No se pudo validar el token porque el proveedor de identidad no responde
+    ServicioNoDisponible:
+      description: |
+        Servicio no disponible por un momento: el proveedor de identidad no responde (el gateway no puede validar el token)
+        o la base de datos no responde. No se perdió nada; se puede reintentar.
       content:
         application/problem+json:
           schema:

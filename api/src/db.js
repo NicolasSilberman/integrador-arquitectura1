@@ -13,6 +13,7 @@ export const pool = new pg.Pool({
   database: process.env.DB_NAME ?? 'expensas',
   user: process.env.DB_USER ?? 'api_expensas',
   password: process.env.DB_PASSWORD,
+  connectionTimeoutMillis: 5000,   // si la base no responde, el pedido falla a los 5 s en lugar de quedar colgado
 });
 
 // Si una conexión ociosa se corta (por ejemplo, porque se reinició la base), se registra y el pool sigue.
@@ -33,4 +34,16 @@ export async function enTransaccion(fn) {
   } finally {
     cliente.release();
   }
+}
+
+// ¿El error es porque la base no está disponible (caída, reiniciándose o inalcanzable)?
+// Esos errores se responden con 503: no es un error del pedido, y en cuanto la base vuelve el pool se reconecta solo.
+const CODIGOS_SIN_BASE = new Set([
+  'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'ECONNRESET', 'EHOSTUNREACH', 'EPIPE',
+  '57P01', '57P02', '57P03',                    // la base se está apagando o todavía no acepta conexiones
+  '08000', '08001', '08003', '08004', '08006',  // errores de conexión de PostgreSQL
+]);
+export function baseNoDisponible(err) {
+  return CODIGOS_SIN_BASE.has(err?.code)
+    || /Connection terminated|timeout exceeded when trying to connect/i.test(err?.message ?? '');
 }

@@ -24,6 +24,7 @@ Guía de pruebas manuales sobre el sistema levantado con `docker compose`. Cada 
 | 16 | 4 Seguridad | Un cliente intenta hacerse pasar por otro usuario | Fernando | ✔ |
 | 17 | 4 Seguridad | La API no se alcanza directo y su usuario de base no puede borrar | Fernando | ✔ |
 | 18 | ★2 Simplicidad · 5 Costo | Cantidad de contenedores y consumo de memoria | Fernando | ✔ |
+| 19 | 3 Recuperación sin guardia | Caída de la base de datos (resiliencia) | Fernando | ✔ |
 
 ## Preparación
 
@@ -461,3 +462,54 @@ docker stats --no-stream
 **Captura:**
 
 ![Prueba-18a.png](verificacion/Prueba-18a.png)
+
+---
+
+## Pruebas 19 en adelante · Etapa final
+
+### Prueba 19 · Caída de la base de datos (resiliencia)
+
+**NFR:** 3 Recuperación sin guardia (escenario E5)
+
+Se rompe un componente a propósito y se observa qué hace el sistema.
+
+**Hipótesis:** si la base de datos se cae, la API sigue viva y responde un error claro (503) en lugar de un error interno o de quedar colgada. Cuando la base vuelve, el sistema funciona de nuevo sin reiniciar la API y sin haber perdido datos.
+
+**Pasos:**
+
+1. **Estado estable.** Con el sistema levantado (`docker compose up -d --build`), como paula en la interfaz web (http://localhost:3001) se ven sus expensas y su estado, y:
+   ```powershell
+   curl.exe -i http://localhost:8000/health
+   ```
+2. **Inyectar la falla:**
+   ```powershell
+   docker compose stop db
+   ```
+3. **Observar:**
+   ```powershell
+   curl.exe -i http://localhost:8000/health
+   docker compose ps
+   docker compose logs api --tail 5
+   ```
+   Y en la interfaz web, como paula, recargar la lista de expensas (cambiar el filtro de estado alcanza).
+4. **Restaurar:**
+   ```powershell
+   docker compose start db
+   ```
+   Esperar unos segundos a que `docker compose ps` muestre la base como `healthy`, y repetir `curl.exe -i http://localhost:8000/health` y la lista de expensas en la interfaz, **sin reiniciar la API**.
+
+**Resultado esperado:** en el estado estable, `/health` responde 200. Con la base caída, `/health` responde **503 *Base de datos no disponible*** con `Retry-After: 30`; la interfaz muestra el aviso "Base de datos no disponible"; `docker compose ps` muestra la API en ejecución (no se cayó) y el log registra `[db] base no disponible`. Al volver la base, `/health` responde 200 y las expensas se ven igual que antes, con el mismo estado: no se perdió ningún dato.
+
+**Resultado obtenido:** en el estado estable, `/health` responde 200. Con la base caída, `/health` responde **503 *Base de datos no disponible*** con `Retry-After: 30`; la interfaz muestra el aviso "Base de datos no disponible"; `docker compose ps` muestra la API en ejecución (no se cayó) y el log registra `[db] base no disponible`. Al volver la base, `/health` responde 200 y las expensas se ven igual que antes, con el mismo estado: no se perdió ningún dato.
+
+**Captura:**
+
+![Prueba-19a.png](verificacion/Prueba-19a.png)
+
+![Prueba-19b.png](verificacion/Prueba-19b.png)
+
+![Prueba-19c.png](verificacion/Prueba-19c.png)
+
+![Prueba-19d.png](verificacion/Prueba-19d.png)
+
+![Prueba-19e.png](verificacion/Prueba-19e.png)

@@ -121,7 +121,7 @@ app.use(async (req, res) => {
       body: ['POST', 'PUT', 'PATCH'].includes(req.method) ? JSON.stringify(req.body ?? {}) : undefined,
     });
     // Solo se copian los headers que importan (el CORS lo maneja el gateway, no la API)
-    for (const h of ['content-type', 'location']) if (resp.headers.get(h)) res.set(h, resp.headers.get(h));
+    for (const h of ['content-type', 'location', 'retry-after']) if (resp.headers.get(h)) res.set(h, resp.headers.get(h));
     res.status(resp.status).send(Buffer.from(await resp.arrayBuffer()));
   } catch (err) {
     console.error(err.message);
