@@ -118,6 +118,8 @@ RF1 a RF5 son el corte (login + caso de uso mínimo). RF6 a RF9 se diseñan, per
 
 ## 3. Requerimientos no funcionales
 
+### 3.1 NFRs priorizados
+
 Priorizados según el escenario 5A. Para cada uno se indica su categoría en el catálogo de NFRs, su característica en la ISO 25010 y una medida concreta. ★ marca los NFR estrella del escenario.
 
 | Prioridad | NFR | Categoría | ISO 25010 | Qué significa en el 5A | Medida |
@@ -130,6 +132,67 @@ Priorizados según el escenario 5A. Para cada uno se indica su categoría en el 
 | 5 | Costo | Restricción del escenario | — | Hosting barato | Todo el sistema entra en un servidor de 2 GB de RAM, medido con `docker stats` |
 | 6 | Performance | Operacional | Eficiencia de desempeño | Suficiente para unas 150 unidades | Consulta de la expensa en menos de 1 s en el pico de vencimiento (supuesto S1) |
 | — | Escalabilidad | Operacional | — | **No es un objetivo:** la escala es fija y chica | Se deja fuera a propósito para no sobredimensionar |
+
+### 3.2 Restricciones
+
+Lo que el diseño no puede cambiar: viene del escenario o de la consigna.
+
+| # | Restricción | Origen | Qué condiciona |
+|---|---|---|---|
+| R1 | El banco no cobra en línea: el propietario paga con un código y el banco informa las cobranzas del día anterior en un listado diario | Escenario 5A | El flujo en tres tiempos y la conciliación diaria (ADR-003, ADR-004) |
+| R2 | No hay nadie de guardia: si algo falla de noche, se arregla al otro día | Escenario 5A | La recuperación tiene que ser automática (NFR 3) |
+| R3 | Un hosting barato | Escenario 5A | Pocos contenedores y poca memoria: todo en un servidor de 2 GB (NFR 5) |
+| R4 | Lo mantiene un programador freelance que viene cuando hay problemas | Escenario 5A | Pocas piezas, fáciles de entender y de volver a levantar (NFR ★ 2) |
+| R5 | El banco expone un servicio SOAP heredado, con su propio formato | Escenario 5A | Una capa anticorrupción que traduce ese formato (ADR-003) |
+| R6 | Autenticación delegada en un proveedor OIDC con al menos dos roles; API documentada en OpenAPI; todo el sistema, con el proveedor de identidad y el mock, se levanta con un solo comando | Consigna | Keycloak (ADR-005), el contrato `openapi.yaml` y el `docker-compose.yml` |
+
+### 3.3 Escenarios de calidad
+
+Cada NFR priorizado se escribe como un escenario: *cuando [fuente] hace [estímulo] sobre [artefacto] en [entorno], el sistema [respuesta], medido como [medida]*. Así cada uno se puede verificar; la verificación está en la sección 11.
+
+| | E1 · Consistencia (★ 1) | E2 · Liquidación (★ 1b) | E3 · Simplicidad (★ 2) |
+|---|---|---|---|
+| **Fuente** | El banco | El administrador o un propietario | El programador freelance |
+| **Estímulo** | Informa el mismo pago dos veces (reproceso, reintento o dos conciliaciones al mismo tiempo), o un pago con monto o código que no coincide | Consulta una expensa liquidada | Clona el repositorio para levantar el sistema, después de meses sin tocarlo |
+| **Artefacto** | La conciliación (módulos Cobranzas y Liquidación) y la base | El módulo Liquidación | El despliegue completo (`docker-compose.yml` y README) |
+| **Entorno** | Operación normal y reintentos después de una falla | Operación normal | Una máquina con Docker, sin conocer el sistema |
+| **Respuesta** | Imputa cada pago una sola vez y solo con el monto exacto; lo que no coincide queda observado con su motivo | El total de cada expensa es la suma de sus conceptos, y las expensas de un consorcio suman el total liquidado | Lo levanta siguiendo el README, con los usuarios de prueba listos |
+| **Medida** | 0 expensas con más de un pago imputado · el 100 % del listado queda imputado u observado | Diferencia de 0 centavos | Un solo comando · menos de 30 minutos desde clonar |
+
+| | E4 · Recuperación: falla del banco (3) | E5 · Recuperación: caída de la base (3) | E6 · Seguridad (4) |
+|---|---|---|---|
+| **Fuente** | El banco | La infraestructura | Un propietario autenticado |
+| **Estímulo** | No responde durante la conciliación | La base de datos deja de responder | Pide una expensa ajena, intenta conciliar o manda encabezados de identidad falsos |
+| **Artefacto** | La conciliación automática | La API | El gateway y la API |
+| **Entorno** | De noche, sin nadie de guardia | En horario de uso | Operación normal |
+| **Respuesta** | Registra el error, reintenta sola y se pone al día con los días atrasados, en orden | Responde un error claro (503) sin perder datos, y vuelve a funcionar sola cuando la base vuelve | Rechaza el pedido (403; 401 sin un token válido) |
+| **Medida** | 0 cobranzas perdidas · 0 intervenciones manuales · concilia dentro de los 30 minutos posteriores a que el banco vuelve | 0 datos perdidos · servicio normal sin reiniciar la API | El 100 % de los accesos indebidos se rechaza |
+
+| | E7 · Costo (5) | E8 · Performance (6) |
+|---|---|---|
+| **Fuente** | Quien contrata el hosting | Los propietarios (supuesto S1) |
+| **Estímulo** | Despliega todo el sistema en un servidor | Consultan su expensa al mismo tiempo |
+| **Artefacto** | Todos los contenedores | El gateway, la API y la base |
+| **Entorno** | Uso normal | Pico de los días previos al vencimiento: 50 usuarios simultáneos |
+| **Respuesta** | Todo entra en el servidor | Devuelven la expensa |
+| **Medida** | Menos de 2 GB de memoria, medido con `docker stats` | El 95 % de las respuestas en menos de 1 s (p95) · menos del 1 % de errores |
+
+### 3.4 Utility tree
+
+Prioriza los escenarios por su importancia para el negocio y su dificultad técnica (A = alta, M = media, B = baja). Los (A, A) y (A, M) son los que se analizan en la evaluación de la arquitectura.
+
+![Utility tree](./utility-tree.png)
+
+| Atributo | Refinamiento | Escenario | (Importancia, Dificultad) |
+|---|---|---|---|
+| Consistencia | Cobro doble | E1: el mismo pago informado dos veces se imputa una sola vez | **(A, A)** |
+| Consistencia | La liquidación cuadra | E2: el total es la suma de los conceptos, al centavo | (A, B) |
+| Recuperación | Falla del banco | E4: se pone al día sola, sin intervención | **(A, M)** |
+| Recuperación | Caída de la base | E5: error claro y recuperación sin reiniciar | (M, M) |
+| Seguridad | Acceso indebido | E6: el 100 % de los accesos indebidos se rechaza | **(A, M)** |
+| Simplicidad | Levantarlo sin ayuda | E3: un comando, menos de 30 minutos | (A, B) |
+| Costo | Hosting barato | E7: menos de 2 GB | (M, B) |
+| Performance | Pico de vencimiento | E8: p95 < 1 s con 50 usuarios | (M, B) |
 
 ---
 
