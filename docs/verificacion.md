@@ -25,6 +25,7 @@ Guía de pruebas manuales sobre el sistema levantado con `docker compose`. Cada 
 | 17 | 4 Seguridad | La API no se alcanza directo y su usuario de base no puede borrar | Fernando | ✔ |
 | 18 | ★2 Simplicidad · 5 Costo | Cantidad de contenedores y consumo de memoria | Fernando | ✔ |
 | 19 | 3 Recuperación sin guardia | Caída de la base de datos (resiliencia) | Fernando | ✔ |
+| 20 | 6 Performance | Carga: 50 usuarios simultáneos consultando su expensa | Nicolás | ✔ |
 
 ## Preparación
 
@@ -513,3 +514,36 @@ Se rompe un componente a propósito y se observa qué hace el sistema.
 ![Prueba-19d.png](verificacion/Prueba-19d.png)
 
 ![Prueba-19e.png](verificacion/Prueba-19e.png)
+
+### Prueba 20 · Carga: 50 usuarios simultáneos
+
+**NFR:** 6 Performance (escenario E8)
+
+Prueba de carga con [k6](https://k6.io), con umbrales: si no se cumplen, k6 termina con error. El script está en [`pruebas/carga.js`](../pruebas/carga.js). Cada usuario virtual hace lo que hace un propietario: pide la lista de sus expensas, abre una y espera un segundo. Los pedidos pasan por el camino completo: gateway (valida el token y los permisos), API y base.
+
+**Pasos:**
+
+1. Con el sistema levantado, entrar a Swagger UI como paula y copiar el token (el comando *Curl* de cualquier pedido trae `Authorization: Bearer <token>`). Desde la carpeta del repo:
+   ```powershell
+   $T = "<token>"
+   ```
+2. Correr la prueba enseguida (dura 1 minuto 45 segundos y el token, 5 minutos). k6 corre en un contenedor, dentro de la red interna del compose:
+   ```powershell
+   docker run --rm --network integrador-arquitectura1_backend -v "${PWD}/pruebas:/pruebas" -e TOKEN=$T grafana/k6:1.0.0 run --summary-export=/pruebas/carga-resumen.json /pruebas/carga.js
+   ```
+3. Anotar el entorno:
+   ```powershell
+   docker info --format "{{.NCPU}} CPU · {{.MemTotal}} bytes de memoria · {{.OperatingSystem}}"
+   ```
+
+**Resultado esperado:** los dos umbrales en ✓: `p(95)<1000` (el 95 % de las respuestas en menos de 1 s) y `rate<0.01` (menos del 1 % de errores), y los checks `lista: 200` y `detalle: 200` al 100 %. El resumen queda guardado en `pruebas/carga-resumen.json`.
+
+Es una medición en una computadora de desarrollo, no en el servidor de producción: sirve para comparar y para mostrar que, a la escala del escenario, hay mucho margen.
+
+**Resultado obtenido:** los dos umbrales se cumplieron: **p95 = 4,74 ms** (umbral: 1.000 ms) y **0,00 % de errores** (0 de 8.252 pedidos). Los checks `lista: 200` y `detalle: 200` dieron 100 %. Promedio 3,6 ms, máximo 28,77 ms, unos 78 pedidos por segundo con 50 usuarios simultáneos, durante 1 minuto 45 segundos. Entorno: Docker Desktop con 16 CPU y 15,6 GiB de memoria. El resumen completo está en [`pruebas/carga-resumen.json`](../pruebas/carga-resumen.json).
+
+**Captura:**
+
+![Prueba-20a.png](verificacion/Prueba-20a.png)
+
+![Prueba-20b.png](verificacion/Prueba-20b.png)
