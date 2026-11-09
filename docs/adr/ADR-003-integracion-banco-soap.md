@@ -29,6 +29,11 @@ El banco no cobra en línea: el propietario paga con un código y cada mañana e
 - (−) La capa anticorrupción es una pieza más que mantener.
 - (−) El mock reproduce lo que sabemos del banco; el banco real podría comportarse distinto.
 
+## Confirmación
+
+- El dominio trabaja con el formato propio aunque el banco informe importes como `"50200,01"` y fechas como `DDMMAAAA`: las conciliaciones de las [pruebas 1 a 5](../verificacion.md) imputan y observan correctamente.
+- Un error del banco (SOAP Fault o servicio caído) no rompe el sistema: la corrida queda registrada con error y la API responde 502 ([prueba 8](../verificacion.md)).
+
 ## NFRs
 
 - **Favorece:** consistencia (el dominio no depende de un formato ajeno), mantenibilidad y recuperación (una falla del banco queda contenida en la integración).

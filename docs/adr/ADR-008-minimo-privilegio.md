@@ -30,6 +30,12 @@ Hasta ahora la API se conecta a la base con el usuario que crea Postgres al inic
 - (−) Cuando el esquema cambie, hay que acordarse de dar permisos sobre las tablas nuevas.
 - (−) El script de inicialización corre solo con el volumen vacío: para aplicar el cambio hay que recrear la base (`docker compose down -v`).
 
+## Confirmación
+
+- El usuario de la API en la base puede leer pero no borrar: [prueba 17](../verificacion.md) (`DELETE` rechazado con `permission denied`).
+- La base y la API no publican puertos: [prueba 17](../verificacion.md).
+- Los contenedores propios corren sin root: `docker compose exec api id -u` y `docker compose exec gateway id -u` devuelven un usuario distinto de 0.
+
 ## NFRs
 
 - **Favorece:** seguridad (confidencialidad e integridad).

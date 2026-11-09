@@ -44,6 +44,11 @@ Además, el único factor de autenticación es la contraseña. El escenario mane
 - (−) Hay que definir cómo recupera el acceso un administrador que pierde su celular (códigos de recuperación de un solo uso), o el segundo factor vale lo mismo que ese proceso.
 - (−) Con terminación en el borde, se confía en la red interna (coherente con ADR-006).
 
+## Confirmación
+
+- En la demo no hay TLS ni segundo factor, por decisión: no hay nada que confirmar en `localhost`.
+- En producción se confirmaría con `curl -I https://<dominio>` (redirección a HTTPS y encabezado `Strict-Transport-Security`) y entrando como administrador, que tiene que pedir el código TOTP.
+
 ## NFRs
 
 - **Favorece:** seguridad en producción (confidencialidad de credenciales y tokens), simplicidad de la demo.

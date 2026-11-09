@@ -33,6 +33,12 @@ Vamos a poner un **gateway** delante de la API, como **única puerta de entrada*
 - (−) **La API confía en la red interna.** Asumimos a conciencia la falacia "la red es segura": si alguien alcanzara la API por otro camino, podría hacerse pasar por cualquier usuario con los encabezados de identidad. Lo mitiga que la API no publique su puerto ni esté en otra red que la interna.
 - (−) La autorización queda repartida: los permisos por rol en el gateway y la regla fina en la API.
 
+## Confirmación
+
+- Sin token, con un token adulterado o con un rol que no alcanza, el gateway rechaza el pedido: [pruebas 12, 13 y 14](../verificacion.md).
+- Los encabezados de identidad que manda el cliente se ignoran: [prueba 16](../verificacion.md).
+- La API no se alcanza sin pasar por el gateway: [prueba 17](../verificacion.md).
+
 ## NFRs
 
 - **Favorece:** seguridad (un único punto de entrada controlado), mantenibilidad (reglas por rol en un solo lugar).

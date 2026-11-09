@@ -6,6 +6,7 @@ services:
   # Base de datos. No publica puertos: solo la ven los servicios de la red "backend".
   db:
     image: postgres:16-alpine
+    restart: unless-stopped   # si el proceso se cae, Docker lo vuelve a levantar (sin guardia; ver la sección 12)
     environment:
       POSTGRES_DB: ${DB_NAME:-expensas}
       POSTGRES_USER: ${DB_USER:-expensas}
@@ -25,6 +26,7 @@ services:
   # API de expensas (monolito modular). Se construye desde ./api (Dockerfile propio).
   api:
     build: ./api
+    restart: unless-stopped
     environment:
       PORT: 3000
       DB_HOST: db          # service discovery: el nombre del servicio ES el hostname
@@ -50,6 +52,7 @@ services:
   # por rol y reenvía la identidad del usuario a la API (X-Usuario, X-Roles).
   gateway:
     build: ./gateway
+    restart: unless-stopped
     environment:
       PORT: 8000
       API_URL: http://api:3000                                                       # por la red backend
@@ -69,6 +72,7 @@ services:
   # Proveedor de identidad OIDC (login y roles), ADR-005. Modo desarrollo: sin HTTPS.
   keycloak:
     image: quay.io/keycloak/keycloak:26.2.5
+    restart: unless-stopped
     command: ["start-dev", "--import-realm"]          # importa el realm "expensas" la primera vez
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin              # usuario de la consola de administración
@@ -92,6 +96,7 @@ services:
   # Solo para desarrollo y demo; en producción se reemplaza por el banco real.
   banco-mock:
     build: ./banco-mock
+    restart: unless-stopped
     environment:
       PORT: 8090
       BANCO_API_KEY: "${BANCO_API_KEY:?Falta BANCO_API_KEY, copiala de .env.example a tu .env}"   # la clave que exige el servicio SOAP
@@ -104,6 +109,7 @@ services:
   # No está en "backend": no necesita hablar con nadie. Quien llama a la API es tu navegador.
   swagger-ui:
     image: swaggerapi/swagger-ui:v5.17.14
+    restart: unless-stopped
     environment:
       SWAGGER_JSON: /spec/openapi.yaml
       OAUTH_CLIENT_ID: swagger-ui       # cliente público registrado en el realm (sin secreto)
@@ -118,6 +124,7 @@ services:
   # Como Swagger UI, no necesita ninguna red interna: quien llama al gateway y a Keycloak es el navegador.
   web:
     image: nginxinc/nginx-unprivileged:1.27-alpine   # nginx sin root (ADR-008); escucha en el 8080
+    restart: unless-stopped
     volumes:
       - ./web:/usr/share/nginx/html:ro   # bind mount: se edita la página y se recarga, sin rebuild
     ports:

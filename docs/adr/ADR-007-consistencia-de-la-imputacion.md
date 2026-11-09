@@ -40,6 +40,12 @@ La consigna pone dos reglas que no se negocian: **nunca se puede cobrar dos vece
 - (−) Mientras corre una conciliación, una segunda tiene que esperar o se rechaza.
 - (−) El código expone el id interno de la expensa. Se acepta: no da acceso a nada, porque consultar una expensa requiere login y pertenencia.
 
+## Confirmación
+
+- El mismo pago informado dos veces, un pago con monto distinto, un código inexistente y un segundo pago de la misma expensa: se imputa una sola vez y lo demás queda observado con su motivo ([pruebas 2 a 5](../verificacion.md)).
+- Varias conciliaciones al mismo tiempo: una corre y las demás reciben 409 ([prueba 6](../verificacion.md)).
+- El código de pago es siempre el mismo para la misma expensa: [prueba 1](../verificacion.md) (201 la primera vez, 200 con el mismo código después).
+
 ## NFRs
 
 - **Favorece:** consistencia (estrella), recuperación sin guardia.

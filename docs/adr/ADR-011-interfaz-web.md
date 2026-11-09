@@ -36,6 +36,11 @@ Vamos a sumar una **interfaz web sencilla**:
 - (−) Sin framework, si la interfaz creciera mucho habría que reorganizarla.
 - (−) El token vive en la memoria del navegador, como en cualquier cliente público; se mitiga con su vencimiento corto (5 minutos).
 
+## Confirmación
+
+- Cada rol ve sus pantallas y puede hacer el caso de uso de punta a punta desde la interfaz: [prueba 21](../verificacion.md).
+- La interfaz no agrega piezas a la API: usa el mismo contrato y los mismos permisos que Swagger UI (las pruebas 14 a 16 rigen igual para la interfaz).
+
 ## NFRs
 
 - **Favorece:** usabilidad para los dos roles, demostrabilidad del caso de uso, simplicidad (sin build, sin cambios en la API).

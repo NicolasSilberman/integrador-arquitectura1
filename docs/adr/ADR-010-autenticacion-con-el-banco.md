@@ -30,6 +30,11 @@ La API descarga cada mañana el listado de cobranzas del banco (ADR-003). En esa
 - (−) Sin TLS, la clave viaja a la vista; en producción la conexión con el banco tiene que ir cifrada (ADR-009).
 - (−) En la demo, la misma clave está en el `.env` de la API y del banco simulado.
 
+## Confirmación
+
+- Todas las conciliaciones de las [pruebas 1 a 11](../verificacion.md) funcionan con la clave del `.env`.
+- Con una clave incorrecta en `BANCO_API_KEY`, el banco simulado responde 401 y la conciliación responde 502 sin imputar nada.
+
 ## NFRs
 
 - **Favorece:** seguridad de la integración (confidencialidad del listado de cobranzas).

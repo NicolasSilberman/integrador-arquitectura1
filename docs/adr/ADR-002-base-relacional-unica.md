@@ -28,6 +28,11 @@ El NFR estrella es la consistencia: una expensa no se puede cobrar dos veces y c
 - (−) Hay que convertir los importes a un formato legible en los bordes (la API y la integración con el banco).
 - (−) Todos los módulos dependen de la misma base: si se cae, se cae todo el sistema. Se acepta por la escala y porque no hay requisito de alta disponibilidad.
 
+## Confirmación
+
+- Un pago se imputa solo con el monto exacto, comparado en centavos, y el total de una expensa es la suma de sus conceptos al centavo: [pruebas 1, 3 y 7](../verificacion.md).
+- Las reglas que garantiza la base se cumplen aunque el código las pase por alto: el índice único impide una segunda imputación de la misma expensa ([pruebas 5 y 6](../verificacion.md)).
+
 ## NFRs
 
 - **Favorece:** consistencia, simplicidad y costo.

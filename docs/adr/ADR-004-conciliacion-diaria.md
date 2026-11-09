@@ -32,6 +32,11 @@ Vamos a ejecutar la conciliación como una **tarea programada dentro del proceso
 - (−) La API y la conciliación comparten recursos. Con unas pocas decenas de cobranzas por día, no es un problema.
 - (−) Si en el futuro hubiera varias instancias de la API, habría que asegurar que no concilien dos a la vez.
 
+## Confirmación
+
+- La conciliación automática imputa sola, reintenta sola cuando el banco vuelve y se pone al día con los días atrasados, en orden: [pruebas 9, 10 y 11](../verificacion.md).
+- Reintentar no duplica nada: [prueba 10](../verificacion.md) (el reintento imputa una sola vez).
+
 ## NFRs
 
 - **Favorece:** simplicidad, recuperación sin guardia y consistencia (reintentos sin duplicados).

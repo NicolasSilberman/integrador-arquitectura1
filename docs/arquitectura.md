@@ -472,3 +472,61 @@ Los NFRs se verificaron con 18 pruebas manuales sobre el sistema levantado con `
 | 4 Seguridad | 12 a 17 | Sin token o con un token adulterado: 401; un propietario no puede conciliar ni ver expensas ajenas: 403; los headers de identidad que manda el cliente se ignoran; la API no se alcanza directo y su usuario de base no puede borrar | ✔ el 100 % de los accesos a expensas ajenas se rechazó |
 | 5 Costo | 18 | Consumo de memoria medido con `docker stats` | ✔ unos 730 MiB en total, dentro de un servidor de 2 GB. Keycloak usa la mayor parte (unos 634 MiB) |
 | 6 Performance | — | — | No se midió en esta etapa |
+
+## 12. Evaluación de la arquitectura
+
+Evaluación liviana al estilo ATAM, según la Clase 13. No da una nota: da hallazgos. Se toman los escenarios más importantes del utility tree (sección 3.4), los (A, A) y los (A, M), y se recorre cada uno sobre el C4 de Contenedores (sección 6): qué componentes intervienen, qué decisiones lo sostienen y qué se encuentra.
+
+- **Punto de sensibilidad:** una decisión de la que depende fuertemente un atributo.
+- **Punto de trade-off:** una decisión que afecta a más de un atributo, en sentidos opuestos.
+- **Riesgo:** una decisión potencialmente problemática. **No-riesgo:** una decisión buena, apoyada en un supuesto explícito.
+
+### 12.1 E1 · El mismo pago informado dos veces se imputa una sola vez (A, A)
+
+**Recorrido:** banco → API (capa anticorrupción, módulo Cobranzas, módulo Liquidación) → base. **Decisiones:** ADR-002, ADR-003, ADR-007.
+
+| Tipo | Hallazgo |
+|---|---|
+| Sensibilidad | La garantía depende de que la base tenga **transacciones y restricciones**: el identificador del banco único, la expensa bloqueada mientras se imputa y el índice que admite una sola imputación por expensa. Con una base sin esas garantías, o sacando el índice, la consistencia queda solo en manos del código |
+| Trade-off | **Consistencia contra comodidad del administrador:** imputar solo con el monto exacto evita imputar mal, pero un pago parcial o con recargo queda observado y hay que resolverlo a mano |
+| Riesgo | **R1.** No hay una pantalla para resolver las cobranzas observadas: el administrador las ve, pero las resuelve fuera del sistema |
+| No-riesgo | Dos conciliaciones al mismo tiempo no imputan dos veces: el candado está en la base, así que vale aunque hubiera varias instancias de la API (ADR-004, consecuencia negativa) |
+| No-riesgo | Reprocesar un día ya conciliado no duplica nada, porque cada operación del banco se registra una sola vez |
+
+### 12.2 E4 · Si el banco falla, el sistema se pone al día solo (A, M)
+
+**Recorrido:** planificador dentro de la API → banco; corridas registradas en la base. **Decisiones:** ADR-004, ADR-007.
+
+| Tipo | Hallazgo |
+|---|---|
+| Sensibilidad | La recuperación depende de que **la API esté corriendo**: si el proceso se cae, tampoco concilia. Y depende de la ventana de puesta al día (`CONCILIACION_MAX_DIAS`, 7 días): más atrás, no se recupera sola |
+| Trade-off | **Simplicidad contra aislamiento:** la conciliación viaja con la API (ninguna pieza extra que operar), a costa de compartir el proceso y sus recursos |
+| Riesgo | **R2.** Si el proceso de la API se cae por un error inesperado, nadie lo vuelve a levantar hasta que alguien lo note |
+| Riesgo | **R3.** No hay aviso si el banco falla varios días seguidos: el error queda registrado y en el log, pero sin guardia nadie lo mira |
+| No-riesgo | Reintentar no duplica nada y los días se concilian en orden, sin saltear el que falló (pruebas 10 y 11) |
+
+### 12.3 E6 · El 100 % de los accesos indebidos se rechaza (A, M)
+
+**Recorrido:** navegador → proveedor de identidad (login) → gateway (token y rol) → API (regla fina). **Decisiones:** ADR-005, ADR-006, ADR-008, ADR-009, ADR-011.
+
+| Tipo | Hallazgo |
+|---|---|
+| Sensibilidad | La API confía en los encabezados `X-Usuario` y `X-Roles` porque **solo se la alcanza por el gateway**. Si alguien publicara el puerto de la API, cualquiera podría hacerse pasar por cualquiera |
+| Trade-off | **Simplicidad contra defensa en profundidad:** la seguridad está en un solo lugar (el gateway), y la API no vuelve a validar el token |
+| Trade-off | **Seguridad contra disponibilidad:** si el proveedor de identidad se cae y el gateway no tiene sus claves en caché, nadie puede entrar (503) |
+| Riesgo | **R4.** En la demo no hay TLS ni segundo factor (ADR-009) |
+| No-riesgo | Un token adulterado, vencido, de otro emisor o emitido para otra aplicación no sirve: el gateway verifica la firma, `exp`, `iss` y `aud` en cada pedido (prueba 13) |
+| No-riesgo | Con el proveedor de identidad caído, los tokens vigentes se siguen validando con las claves en caché del gateway |
+
+### 12.4 Tema de riesgo y tratamiento
+
+**Tema de riesgo:** *la operación sin guardia depende de que alguien mire* (R2 y R3). Amenaza el NFR 3, recuperación sin guardia: el sistema se recupera solo de las fallas del banco y de la base, pero no avisa cuando algo no se recupera.
+
+Como pide la Clase 13, cada riesgo termina en una decisión, una verificación o un "lo aceptamos" explícito:
+
+| Riesgo | Tratamiento |
+|---|---|
+| R1 · Las observadas se resuelven fuera del sistema | **Aceptado.** Son pocas (supuesto S2) y la interfaz las muestra con su motivo. Una pantalla para resolverlas queda como mejora futura |
+| R2 · Nadie levanta la API si se cae | **Resuelto:** todos los servicios del compose tienen `restart: unless-stopped`, así que Docker los vuelve a levantar solos. Al arrancar, la API marca las corridas interrumpidas y las reintenta (ADR-004) |
+| R3 · Sin aviso si el banco falla varios días | **Aceptado, con mitigación:** la ventana de 7 días cubre un fin de semana largo, y el administrador ve las corridas con error. Un aviso por correo queda como mejora futura |
+| R4 · Sin TLS ni segundo factor en la demo | **Aceptado para la demo**, diseñado para producción (ADR-009) |

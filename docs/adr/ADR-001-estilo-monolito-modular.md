@@ -28,6 +28,11 @@ La comparación completa está en la matriz de Pugh (documento de arquitectura, 
 - (−) Escala solo en vertical. Se acepta: la escala del escenario es fija y chica.
 - (−) Las fronteras entre módulos dependen de la disciplina del equipo, porque el lenguaje no las impone.
 
+## Confirmación
+
+- El sistema completo (los módulos y sus piezas de apoyo) se levanta con un solo comando, y la API es un único contenedor: [prueba 18](../verificacion.md) (`docker compose ps`).
+- Las fronteras entre módulos se respetan: ningún módulo importa el código interno de otro, solo su `index.js` (por ejemplo, Cobranzas usa a Liquidación por `modulos/liquidacion/index.js`). Se revisa con una búsqueda de los `import` en `api/src/modulos`.
+
 ## NFRs
 
 - **Favorece:** consistencia, simplicidad, costo y mantenibilidad.

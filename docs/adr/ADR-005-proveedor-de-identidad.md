@@ -35,6 +35,11 @@ Vamos a delegar la autenticación en **Keycloak**, como un servicio más del com
 - (−) Los tokens no se pueden revocar al instante; por eso duran solo 5 minutos.
 - (−) Las contraseñas de los usuarios de prueba están en el realm del repositorio: son solo para la demo.
 
+## Confirmación
+
+- Los dos roles entran por el proveedor de identidad y ven lo que les corresponde: [pruebas 1, 14 y 15](../verificacion.md), y la interfaz web por rol ([prueba 21](../verificacion.md)).
+- Un token adulterado o vencido no sirve: [prueba 13](../verificacion.md).
+
 ## NFRs
 
 - **Favorece:** seguridad (confidencialidad), mantenibilidad (no hay código de login propio).
