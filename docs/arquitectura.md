@@ -530,3 +530,18 @@ Como pide la Clase 13, cada riesgo termina en una decisión, una verificación o
 | R2 · Nadie levanta la API si se cae | **Resuelto:** todos los servicios del compose tienen `restart: unless-stopped`, así que Docker los vuelve a levantar solos. Al arrancar, la API marca las corridas interrumpidas y las reintenta (ADR-004) |
 | R3 · Sin aviso si el banco falla varios días | **Aceptado, con mitigación:** la ventana de 7 días cubre un fin de semana largo, y el administrador ve las corridas con error. Un aviso por correo queda como mejora futura |
 | R4 · Sin TLS ni segundo factor en la demo | **Aceptado para la demo**, diseñado para producción (ADR-009) |
+
+## 13. Checklist Twelve-Factor
+
+Un repaso corto del compose con los factores de [Twelve-Factor App](https://12factor.net) que propone la Clase 13. ✔ cumple · ◐ cumple en parte.
+
+| Factor | Pregunta | | Cómo está en el sistema |
+|---|---|---|---|
+| III · Configuración | ¿La configuración está en variables de entorno y no en el código? | ◐ | Las claves van en el `.env` y el resto de la configuración (URLs, la hora de la conciliación) en variables de entorno del compose. La excepción es la interfaz web: como son archivos estáticos, las URLs del gateway y del proveedor de identidad están escritas en `web/app.js` |
+| IV · Servicios de apoyo | ¿La base o los externos se cambian solo con una URL? | ✔ | La base (`DB_HOST`, `DB_PORT`, `DB_NAME`), el banco (`BANCO_URL`) y el proveedor de identidad (`JWKS_URL`, `ISSUER`) se cambian por variables, sin tocar el código. Reemplazar el banco simulado por el real es cambiar `BANCO_URL` y `BANCO_API_KEY` |
+| V · Build, release, run | ¿La imagen se construye una vez y se configura al desplegar? | ◐ | Las imágenes no llevan configuración: la reciben al arrancar. Pero hoy se construyen en la misma máquina donde corren (`--build`); en producción se publicarían con versión en un registro |
+| VI · Procesos | ¿Los servicios son sin estado? | ✔ | La API y el gateway no guardan sesión: cada pedido trae su token y todo el estado vive en la base, incluido el de la conciliación automática. La excepción es el banco simulado, que guarda los pagos en memoria, pero no es parte del despliegue real |
+| VII · Asignación de puertos | ¿Cada servicio expone su propio puerto? | ✔ | Cada contenedor escucha en su puerto. Solo se publican los que usa el navegador; la API y la base no publican ninguno, a propósito (ADR-006, ADR-008) |
+| IX · Desechabilidad | ¿Arranca rápido y se apaga sin perder trabajo? | ◐ | Arranca en segundos y no pierde trabajo: una conciliación cortada a la mitad se marca al arrancar y se reintenta sin duplicar nada (ADR-004, ADR-007), y los servicios se reinician solos (`restart: unless-stopped`). Lo que falta: la API y el gateway no atienden la señal de apagado, así que `docker compose stop` espera 10 segundos antes de cortarlos |
+| X · Paridad dev/prod | ¿Mismas imágenes y mismo compose en todos los entornos? | ◐ | Las imágenes propias y el compose son los mismos. Las diferencias son las de la demo: Keycloak en modo desarrollo, sin TLS ni segundo factor (ADR-009) y el banco simulado en lugar del real |
+| XI · Logs | ¿Escriben a la salida estándar y no a archivos? | ✔ | Todos escriben a la salida estándar y se leen con `docker compose logs` (por ejemplo, el de la conciliación automática) |
